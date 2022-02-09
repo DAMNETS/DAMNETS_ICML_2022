@@ -1,0 +1,62 @@
+---
+exp_dir: experiment_files/
+seed: 123
+
+model:  # See paper for all the arguments in model section.
+  # Note we mention using dropout in the paper, but it's not needed for BA for example.
+  # The model is reasonably sensitive to some hyper-parameters (in particular learning rate and prev edge/lavel smoothing)
+  # So you may need to do some tuning depending on your dataset and the level of noise.
+  name: DMNETS_GNN_MB
+  num_mix_comp: 20
+  hidden_size: 128
+  encoder:
+    num_layers: 2
+    heads: 4
+    dropout: 0.0
+  decoder:
+    num_layers: 2
+    heads: 4
+    dropout: 0.0
+  output_alpha:
+    dropout: 0.0
+  output_theta:
+    dropout: 0.0
+
+experiment:
+  gpus: [0]
+  train:
+    batch_size: 128
+    num_workers: 4
+    shuffle_data: False
+    epochs: 20000
+    optimizer: Adam
+    lr: 0.0003
+    cycle_len: 10000  # For cosine annealing LR
+    lr_decay: 0.3  # For milestone based decay
+    weight_decay: 0.0  # Regularisation-type term in Adam
+    label_smoothing: 0  # Smoothing for target labels
+    prev_edge_smoothing: 0.05  # Smoothing for previous edges - see paper.
+    milestones: [2500, 7500]  # LR decay milestones
+    snapshot_epochs: 50  # How often to save the model (not including validation)
+    display_iters: 10  # How often to print output
+    clip_grad: 3
+    use_writer: False  # Flag for tensorboard.
+  validation:
+    es_buffer: 100  # Burn in period for early stopping
+    val_p: 0.2  # Proportion of TRAINING data to use for validation
+    val_epochs: 5  # Interval between validation epochs
+    es_patience: 20  # How many times to validate with no improvement before stopping
+    batch_size: 10000
+  test:
+    batch_size: 32
+    loader: GNNTestSampler
+
+# To use a custom dataset, add a path: variable with the path to your data.
+dataset:
+  name: ba
+  loader_name: GNNTSampler
+  N: 100  # Number of time series
+  n: 15  # BA(n,m) model
+  m: 5  # BA(n,m) model
+  snapshot_iters: 3  # How many iterations to aggregate
+  n_workers: 10  # Number of threads to generate graphs on

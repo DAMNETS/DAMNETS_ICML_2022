@@ -1,0 +1,60 @@
+---
+exp_dir: experiment_files/
+seed: 0456
+
+model:
+  name: AGE
+  predict_full_adj: True  # If set to True on a fixed node set, will use adjacency vectors of size n-1 (n is number of nodes in node set).
+  hidden_size: 128
+  encoder:
+    num_layers: 6
+    num_attn_heads: 8
+    dim_feedforward: 1024
+    dropout: 0.2
+  decoder:
+    num_layers: 6
+    num_attn_heads: 2
+    dim_feedforward: 1024
+    dropout: 0.2
+
+experiment:
+  gpus: [0]
+  train:
+    batch_size: 128
+    num_workers: 4
+    shuffle_data: False
+    epochs: 20000
+    optimizer: Adam
+    lr: 0.0003
+    cycle_len: 75
+    lr_decay: 0.3
+    weight_decay: 0.0
+    label_smoothing: 0
+    prev_edge_smoothing: 0.05
+    milestones: [2500, 7500]
+    snapshot_epochs: 50
+    display_iters: 10
+    clip_grad: 3
+    use_writer: False
+  validation:
+    markov_buffer: 100
+    val_p: 0.2
+    val_epochs: 5
+    correction_patience: 20
+    max_corrections: 10
+    num_fwd: 3
+    num_cc_samples: 3
+    batch_size: 10000
+  test:
+    batch_size: 32
+    loader: TFTestSampler
+
+dataset:
+  name: ba
+  loader_name: TFTSampler
+  N: 300
+  n: 50
+  m: 4
+  snapshot_iters: 5
+  fixed_node_set: True
+  n_workers: 1
