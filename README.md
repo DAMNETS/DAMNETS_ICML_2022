@@ -13,4 +13,4 @@ See experiment_configs for example configuration files.
 The major dependencies are PyTorch 1.10 with GPU enabled and an appropriate Torch Geometric version. Other dependencies can be found in the requirements file.
 
 ## Brief Code Outline
-The model code can be found in models/dmnets_gnn_mb.py. We train in parallel all subgraphs during the generation of $G_t$.
+The model code can be found in models/dmnets_gnn_mb.py. We train in parallel on all subgraphs during the generation of $G_t$ by stacking the adjacency matrices, see the dataset folder. In our language, batch size is the number of graph pairs (G_{t-1}, G_{t}) to train on at once. 
