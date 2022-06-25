@@ -16,9 +16,17 @@ def parse_arguments():
         '-c',
         '--config_file',
         type=str,
-        help="Path of config file, if empty and -t flag is given will test from the last model trained.",
+        help="Path of model config file, if empty and -t flag is given will test from the last model trained.",
         nargs='?',
         const=''
+    )
+    parser.add_argument(
+        '-d',
+        '--dataset',
+        type=str,
+        help='Name of the dataset to use. This should be generated in the data/ folder. Do not add .pkl to the name.'
+             'Only needed for train.',
+        default=''
     )
     args = parser.parse_args()
     return args
@@ -40,7 +48,9 @@ def main():
         runner = Runner(args, is_test=True)
         runner.test()
     else:
-        args = get_config(os.path.join('experiment_configs', c_args.config_file))
+        args = get_config(os.path.join('experiment_configs', c_args.config_file), tag=c_args.dataset)
+        # args.data_file = os.path.join(args.data_path, f'{c_args.dataset}.pkl')
+        args.dataset_name = c_args.dataset
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)

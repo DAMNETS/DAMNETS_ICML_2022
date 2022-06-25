@@ -9,7 +9,7 @@ def snapshot_model(model, epoch, args, is_best=False):
     if is_best:
         # update config file's test path
         save_name = os.path.join(args.save_dir, 'config.yaml')
-        args.experiment.test.best_val_epoch = epoch
+        args.experiment.best_val_epoch = epoch
         yaml.dump(edict2dict(args),
                   open(save_name, 'w'), default_flow_style=False)
 

@@ -4,15 +4,16 @@ import time
 from easydict import EasyDict as edict
 
 
-def get_config(config_file, exp_dir=None, is_test=False):
+def get_config(config_file, exp_dir=None, is_test=False, tag=''):
     """ Construct and snapshot hyper parameters """
     config = edict(yaml.full_load(open(config_file, 'r')))
 
     # create hyper parameters
     config.run_id = str(os.getpid())
-
+    if is_test:
+        tag = config.dataset_name
     tags = [
-        config.model.name, config.dataset.name,
+        config.model.name, tag,
         time.strftime('%Y-%b-%d-%H-%M-%S'), config.run_id
     ]
     if is_test:
