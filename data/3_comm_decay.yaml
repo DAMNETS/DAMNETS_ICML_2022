@@ -1,9 +1,9 @@
 name: 3_comm_decay
-N: 100
-T: 50
+N: 200
+T: 15
 n_communities: 3
-c_sizes: [10, 10, 10]
+c_sizes: [200, 200, 200]
 p_int: 0.9
 p_ext: 0.05
-decay_prop: 0.05
+decay_prop: 0.3
 seed: 123
