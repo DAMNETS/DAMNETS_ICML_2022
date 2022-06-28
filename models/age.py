@@ -14,13 +14,10 @@ class AGE(nn.Module):
         super(AGE, self).__init__()
         self.model_name = 'AGE'
         self.args = args
+        self.device = args.experiment.device
         self.model_args = args.model
-        self.n = self.args.dataset.max_n
+        self.n = self.args.model.input_size
 
-        if hasattr(args.experiment.train, 'label_smoothing'):
-            self.label_smoothing = args.experiment.train.label_smoothing
-        else:
-            self.label_smoothing = 0
         self.loss_fn = torch.nn.BCEWithLogitsLoss(reduction='mean')
         self.hidden_size = self.model_args.hidden_size
         self.embed = nn.Linear(self.n, self.hidden_size)
@@ -54,10 +51,10 @@ class AGE(nn.Module):
         return self.out_lin(y_adj)
 
     def forward(self, data):
-        y = data['y'] if 'y' in data else None
-        y_lab = data['y_lab'] if 'y_lab' in data else None
-        x = data['x'] if 'x' in data else None
-        adj = data['adj'] if 'adj' in data else None
+        y = data['y'].to(self.device) if 'y' in data else None
+        y_lab = data['y_lab'].to(self.device) if 'y_lab' in data else None
+        x = data['x'].to(self.device) if 'x' in data else None
+        adj = data['adj'].to(self.device) if 'adj' in data else None
         is_sampling = data['is_sampling'] if 'is_sampling' in data else None
 
         if not is_sampling:
@@ -67,7 +64,7 @@ class AGE(nn.Module):
             loss = self.loss_fn(edges_pred, y_lab)
             return loss
         else:
-            return [self.sampling(adj)]
+            return self.sampling(adj)
 
     def sampling(self, x):
         B = x.shape[0] # Batch size

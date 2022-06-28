@@ -1,3 +1,4 @@
+import argparse
 import networkx as nx
 import pickle
 import numpy as np
@@ -40,7 +41,7 @@ def create_edgelists(el_fstr, train_graphs):
 def train_test_tag_gen(T, el_fstr):
     tg_args = SimpleNamespace()
     tg_args.slices = T
-    tg_args.window = 1
+    tg_args.window = 5
     tg_args.gpu = 0
     tg_args.biased = True
 
@@ -80,6 +81,7 @@ def dictionary_search(dictionary, search_value):
     for key, value in dictionary.items():
         if value == search_value:
             return key
+
 
 def load_tag_gen_results(output_dir, data_directory_2):
     graph_attr = pickle.load(open(output_dir + '/graph.pickle', "rb"))
@@ -139,17 +141,11 @@ def load_tag_gen_results(output_dir, data_directory_2):
              for j in range(graph.shape[2])], dtype=np.int8)
     return graph
 
-def run_tag_gen(test_dir=None, graphs_file=None):
-    if test_dir is None:
-        with open('experiment_files/last_test.txt', 'r') as f:
-            test_dir = f.readline()
-            args = get_config(os.path.join(test_dir, 'config.yaml'))
-            train_dir = args.experiment.test.test_model_dir
-    if graphs_file is None:
-        graphs_file = 'test_graphs.pkl'
-    train_graphs = graph_utils.load_graph_ts(os.path.join(test_dir, graphs_file))[-5:]
+
+def run_tag_gen(graphs_file, output_dir):
+    train_graphs = graph_utils.load_graph_ts(graphs_file)
     T = len(train_graphs[0])
-    el_fstr = os.path.join(test_dir, 'train_edgelists')
+    el_fstr = os.path.join(output_dir, 'train_edgelists')
     create_edgelists(el_fstr, train_graphs)
     train_test_tag_gen(T, el_fstr)
 
@@ -159,7 +155,28 @@ def run_tag_gen(test_dir=None, graphs_file=None):
         data_directory_2 = os.path.join(entry.path, f'{entry.name}_output_sequences.txt')
         ts_array = load_tag_gen_results(entry.path, data_directory_2)
         ts_list.append([nx.Graph(ts_array[t]) for t in range(T)])
-    graph_utils.save_graph_list(ts_list, os.path.join(test_dir, 'tag_gen_samples.pkl'))
+    graph_utils.save_graph_list(ts_list, os.path.join(output_dir, 'tag_gen_samples.pkl'))
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="A script to run the DYMOND baseline model")
+    parser.add_argument(
+        '-p',
+        '--graphs_file',
+        type=str,
+        help='The path to the graphs on which to train DYMOND.'
+    )
+    parser.add_argument(
+        '-o',
+        '--output_dir',
+        type=str,
+        help='The directory in which to place the sampled graphs from DYMOND.'
+    )
+    args = parser.parse_args()
+    return args
+
 
 if __name__ == '__main__':
-    run_tag_gen()
+    args = parse_arguments()
+    run_tag_gen(args.graphs_file, args.output_dir)

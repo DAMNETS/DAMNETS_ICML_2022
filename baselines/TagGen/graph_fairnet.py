@@ -384,6 +384,7 @@ def generate_sequence(config, output_directory, model):
             node_level_emb[line[0]] = np.array(list(map(float, line[1:])))
     f_emb.close()
     start_time = time.time()
+    print(f'Total: {len(sequences_role_emb)}')
     for i in range(len(sequences_role_emb)):
         if i % 100 == 0:
             print('Generating {} sequences in {} seconds'.format(i, time.time() - start_time))

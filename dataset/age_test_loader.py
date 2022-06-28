@@ -7,7 +7,7 @@ from torch.utils.data.dataloader import default_collate
 
 
 class TFTestSampler(torch.utils.data.Dataset):
-    def __init__(self, ts_list, args, is_multistep=False, tag='test'):
+    def __init__(self, ts_list, args, tag='test'):
         self.T = len(ts_list[0])
         self.N = len(ts_list)
         graphs_flatten = [G for ts in ts_list for G in ts]

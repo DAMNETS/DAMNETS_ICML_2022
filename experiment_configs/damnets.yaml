@@ -1,0 +1,53 @@
+---
+exp_dir: experiment_files/
+data_path: data/
+seed: 123
+
+model:
+  name: DAMNETS
+  gnn:
+    num_layers: 1
+    heads: 1  # If using GAT
+    dropout: 0.0
+  bigg:
+    embed_dim: 256
+    bits_compress: 256
+    param_layers: 1
+    rnn_layers: 2
+    pos_enc: True
+    pos_base: 10000
+    tree_pos_enc: False
+    share_param: True
+    directed: False
+    self_loop: False
+    bfs_permute: False
+    display: False
+    use_attn: False
+    greedy_frac: 0
+
+experiment:
+  device: 0
+  train:
+    batch_size: 32
+    shuffle_data: True
+    epochs: 20000
+    optimizer: Adam
+    lr: 0.001
+    lr_decay: 0.3  # For milestone based decay
+    weight_decay: 0.005  # Regularisation-type term in Adam
+    snapshot_epochs: 5  # How often to save the model (not including validation)
+    display_iters: 1  # How often to print output
+    clip_grad: 5
+    use_writer: False  # Flag for tensorboard.
+    n_workers: 8
+
+  validation:
+    es_buffer: 50  # Burn in period for early stopping
+    val_epochs: 1  # Interval between validation epochs
+    es_patience: 20  # How many times to validate with no improvement before stopping
+    batch_size: 32
+    patience: 15
+    decay_factor: 0.1
+    min_lr: 1e-6
+    cooldown: 10
+

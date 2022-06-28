@@ -45,15 +45,3 @@ experiment:
   test:
     batch_size: 32
     loader: GNNTestSampler
-
-dataset:
-  name: 3_comm_decay
-  loader_name: TFTSampler
-  N: 100
-  T: 10
-  n_communities: 3
-  c_sizes: [20, 20, 20]
-  p_int: 0.8
-  p_ext: 0.01
-  decay_prop: 0.2
-  n_workers: 6

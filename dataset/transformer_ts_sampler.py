@@ -13,14 +13,9 @@ class TFTSampler(torch.utils.data.Dataset):
         self.N = len(ts_list)
         graphs_flatten = [G for ts in ts_list for G in ts]
         self.max_n = max([G.number_of_nodes() for G in graphs_flatten])
-        if not hasattr(args.dataset, 'max_n'):
-            args.dataset.max_n = self.max_n
 
-        data_cache = os.path.join(args.save_dir, 'data_cache')
-        if not os.path.isdir(data_cache):
-            os.makedirs(data_cache)
+        self.data = []
 
-        self.file_names = []
         print(f'Processing {tag} data.')
         pbar = tqdm(total = self.N * (self.T - 1))
         ix = 0
@@ -37,13 +32,10 @@ class TFTSampler(torch.utils.data.Dataset):
                 # Set the first row to be all ones (SOS token for forward pass)
                 y[0] = 1
                 data = {'x': x, 'y': y, 'y_lab': labels}
-                path = os.path.join(data_cache, f'{tag}_{ix}.pkl')
-                pickle.dump(data, open(path, 'wb'))
-                self.file_names.append(path)
+                self.data.append(data)
                 ix += 1
                 pbar.update(1)
-
-        print('Dataset length: ', len(self.file_names))
+        print('Dataset length: ', len(self.data))
 
     def collate_fn(self, batch):
         return {
@@ -53,11 +45,10 @@ class TFTSampler(torch.utils.data.Dataset):
         }
 
     def __len__(self):
-        return len(self.file_names)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        return pickle.load(open(self.file_names[idx], 'rb'))
-        # return self.data[idx]
+        return self.data[idx]
 
 
 def to_float_tensor(t):

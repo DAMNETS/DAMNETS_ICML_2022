@@ -181,36 +181,6 @@ class Runner:
             self.writer.add_text('Args', pretty_json(self.args))
             self.writer.close()
 
-    def sample_nts(self, graphs, model):
-        sampler = GNNTestSampler(graphs, self.args, tag=f'multistep_test')
-        loader = DataLoader(sampler,
-                             collate_fn=sampler.collate_fn,
-                             batch_size=self.args.experiment.test.batch_size)
-
-        model.eval()
-        print('Beginning Sampling')
-        with torch.no_grad():
-            ts_batches = []
-            for batch_idx, ts_data in enumerate(tqdm(loader)):
-                # Each data is a batch of time series
-                ts_batch = []
-                for t, data in enumerate(ts_data):
-                    ts_batch += model.forward(data)
-                ts_batch = [ts_data[0]['adj']] + ts_batch
-                assert len(ts_batch) == len(graphs[0])
-                ts_batches.append(ts_batch)
-            print('Sampling Complete')
-        ts_list = []
-        for ts_batch in ts_batches:
-            for b in range(ts_batch[0].shape[0]):
-                ts = []
-                for t in range(self.args.dataset.T):
-                    ts.append(nx.Graph(ts_batch[t][b].cpu().numpy()))
-                assert len(ts) == len(graphs[0])
-                ts_list.append(ts)
-        assert len(ts_list) == len(graphs)
-        return ts_list
-
     def test(self):
         dataset = os.path.join(self.args.data_path, self.args.dataset_name)
         test_list = graph_utils.load_graph_ts(dataset + '_test_graphs.pkl')
@@ -223,14 +193,13 @@ class Runner:
         setup_treelib(self.model_args.bigg)
 
         model = RecurTreeGen(self.model_args).to(device)
-        ## Sample the Markov Results
         best_markov_file = os.path.join(self.args.model_save_dir,
                                        f'{self.args.experiment.best_val_epoch}.pt')
         print(f'Best Model File : {best_markov_file}')
         load_model(model, best_markov_file)
         sampled_ts_list = []
         model.eval()
-        pbar = tqdm(total=len(test_list) * len(test_list[0]))
+        pbar = tqdm(total=len(test_list) * (len(test_list[0]) - 1))
         with torch.no_grad():
             for ts in test_list:
                 samples_ts = [ts[0]]

@@ -33,7 +33,7 @@ def make_ba_plots(sampled_ts, test_ts, model_name, save_dir):
                     get_final_degrees_df(test_ts, 'Test', incr=-1)], axis=1)
     ax = df.plot(kind='density', xlim=(0, 25), title='Degree Distribution of $G_T$')
     ax.set_xlabel('Degree')
-    save_path = os.path.join(save_dir, 'ba_degree.pdf')
+    save_path = os.path.join(save_dir, f'{model_name}_ba_degree.pdf')
     plt.savefig(save_path, format='pdf', dpi=1200, bbox_inches='tight')
     plt.close()
 
@@ -47,7 +47,7 @@ def make_three_comm_plots(sampled_ts, test_ts, model_name, save_dir):
     plot_community_eval(sampled_ts, test_ts, range(comms[0]), axs[1], 'First', model_name)
     plot_community_eval(sampled_ts, test_ts, range(comms[0], comms[1]), axs[2], 'Second', model_name)
     axs[0].set_ylabel('Density')
-    save_path = os.path.join(save_dir, '3_comm_densities.pdf')
+    save_path = os.path.join(save_dir, f'{model_name}_3_comm_densities.pdf')
     plt.savefig(save_path, format='pdf', dpi=1200, bbox_inches='tight')
 
 
@@ -134,7 +134,7 @@ def plot_top_N(ts, args, tag, N=5):
     plt.savefig(save_path, format='pdf', dpi=1200, bbox_inches='tight')
 
 
-def plot_network_statistics(stats, save_dir=''):
+def plot_network_statistics(stats, save_dir='', tag=''):
     model_names = stats.columns.get_level_values(0).unique()
     stat_names = stats.columns.get_level_values(1).unique()
     fig, axs = plt.subplots(1, len(stat_names), figsize=(15, 3))
@@ -146,7 +146,7 @@ def plot_network_statistics(stats, save_dir=''):
         axs[idx].set_title(statistic)
         axs[idx].legend(prop={'size': 6})
     plt.tight_layout()
-    save_path = os.path.join(save_dir, 'network_statistics.pdf')
+    save_path = os.path.join(save_dir, tag + 'network_statistics.pdf')
     plt.savefig(save_path, format='pdf', dpi=1200, bbox_inches='tight')
 
 def statistics_compute_cpl(G):
@@ -311,7 +311,7 @@ if __name__ == '__main__':
     stats = pd.concat([sampled_stats, test_stats], axis=1)
     print(stats)
     ## Plot the network statistics in time.
-    plot_network_statistics(stats, save_dir=output_dir)
+    plot_network_statistics(stats, save_dir=output_dir, tag=model_name + '_')
     ## Compute the MMDs.
     local_mmds = compute_local_mmds(sampled_ts, test_ts, model_name)
     global_mmds = compute_global_mmds(stats)
@@ -330,8 +330,8 @@ if __name__ == '__main__':
         print(sb)
         stats = pd.concat([stats, sb], axis=1)
     ## Save dataframes.
-    stats.to_pickle(path=os.path.join(output_dir, 'stats.pkl'))
-    mmds.to_pickle(path=os.path.join(output_dir, 'mmds.pkl'))
+    stats.to_pickle(path=os.path.join(output_dir, f'{model_name}_stats.pkl'))
+    mmds.to_pickle(path=os.path.join(output_dir, f'{model_name}_mmds.pkl'))
 
 
 
