@@ -4,6 +4,7 @@ from utils.ba_ts_generator import barabasi_albert_graph_ts
 from utils.bipartite_contraction_generator import generate_bipartite_contraction_ts
 from functools import partial
 from multiprocessing import Pool
+from tqdm.contrib.concurrent import process_map
 
 
 def generate_graphs(args):
@@ -26,8 +27,9 @@ def generate_graphs(args):
     if graph_type != '3_comm_interpolation':
         fn = partial(fn, **args)
         fn = partial(wrapper, fn=fn)
-        with Pool(args.n_workers) as p:
-            ts_list = p.map(fn, [_ for _ in range(args.N)])
+        ts_list = process_map(fn, range(args.N), max_workers=args.n_workers)
+        # with Pool(args.n_workers) as p:
+        #     ts_list = p.map(fn, [_ for _ in range(args.N)])
             # test_list = p.map(fn, [_ for _ in range(args.N)])
     args.T = len(ts_list[0])
 
