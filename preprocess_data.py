@@ -130,15 +130,15 @@ def main():
         test_graphs, os.path.join(save_dir, f'{c_args.dataset_name}_test_graphs.pkl'))
     ## test doesn't need any pre-processing
 
-    test_graphs = None
-    graphs = None
+    del test_graphs
+    del graphs
     gc.collect()
     ## put into required format, save.
     train_processed, idx = format_data(train_graphs, c_args.num_workers)
     save_graph_list(
         train_processed, os.path.join(save_dir, f'{c_args.dataset_name}_train_graphs.pkl'))
-    train_processed = None
-    train_graphs = None
+    del train_processed
+    del train_graphs
     gc.collect()
 
     val_processed, _ = format_data(val_graphs, c_args.num_workers, idx)
