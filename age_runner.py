@@ -72,23 +72,29 @@ class Runner:
             for batch in train_loader:
                 start = time.time()
                 model.train()
-                opt.zero_grad()
+                # opt.zero_grad()
                 loss = model(batch).mean()  # Loss already averaged within batch in fwd, we average over gpus here
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
-                opt.step()
-                loss_ = loss.item()
+                # opt.step()
+                loss = loss.item()
                 if self.writer is not None:
                     self.writer.add_scalar('Loss/Train', loss, iter_count)
                 results['train_loss'] += [loss]
                 results['train_step'] += [iter_count]
+                if (iter_count + 1) % self.args.experiment.train.accum_grad == 0:
+                    print('Grad Stepping.')
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
+                    opt.step()
+                    opt.zero_grad()
                 if iter_count % self.args.experiment.train.display_iters == 0:
-                    print(f'Iteration: {iter_count} | Train Loss: {loss_: .3f} | '
+                    print(f'Iteration: {iter_count} | Train Loss: {loss: .3f} | '
                           f'Epoch: {epoch} | '
                           f'Best Validation: {self.validator.best_val_loss: .3f} @ epoch {self.validator.best_epoch} | '
                           f'Last Val Loss: {self.validator.val_losses[-1]: .3f} | '
                           f'Total Train Time: {(time.time() - train_start) / 60: .3f}m | '
                           f'Last Epoch Time: {epoch_time: .3f}s | ')
+                iter_count += 1
             if epoch % self.args.experiment.validation.val_epochs == 0:
                 stop = self.validator.validate(epoch)
                 scheduler.step(self.validator.val_losses[-1])
@@ -103,7 +109,7 @@ class Runner:
 
     def save_training_info(self):
         # Plot the losses
-        with open('experiment_files/last_train.txt', 'w') as f:
+        with open('experiment_files/last_age_train.txt', 'w') as f:
             f.write(self.args.save_dir)
         if self.writer is not None:
             self.writer.add_text('Loss/Corrections', str(self.validator.correction_epochs))
@@ -156,7 +162,7 @@ class Runner:
         load_model(model, best_markov_file)
         markov_ts = self.sample_nts(test_graphs, model)
 
-        with open('experiment_files/last_test.txt', 'w') as f:
+        with open('experiment_files/last_age_test.txt', 'w') as f:
             f.write(self.args.save_dir)
 
 
@@ -189,10 +195,10 @@ class Runner:
                 sampled_ts_list.append(samples_ts)
 
         print('--Saving Sampled TS--')
-        save_name = os.path.join(self.args.save_dir, 'sampled_ts.pkl')
+        save_name = os.path.join(self.args.save_dir, 'age_samples.pkl')
         graph_utils.save_graph_list(sampled_ts_list, save_name)
 
-        with open('experiment_files/last_test.txt', 'w') as f:
+        with open('experiment_files/last_age_test.txt', 'w') as f:
             f.write(self.args.save_dir)
 
 

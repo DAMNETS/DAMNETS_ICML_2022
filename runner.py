@@ -84,14 +84,16 @@ class Runner:
             data[i].graph_id = i + start_idx
         return DataLoader(data,
                           batch_size=self.exp_args.train.batch_size,
-                          shuffle=self.exp_args.train.shuffle_data)
+                          shuffle=self.exp_args.train.shuffle_data,
+                          pin_memory=True)
 
     def _make_loader(self, graphs, deltas):
         for d in tqdm(deltas):
             TreeLib.InsertGraph(d)
         return DataLoader(graphs,
                           batch_size=self.exp_args.train.batch_size,
-                          shuffle=self.exp_args.train.shuffle_data)
+                          shuffle=self.exp_args.train.shuffle_data,
+                          pin_memory=True)
     def train(self):
         # Create data loader
         dataset = os.path.join(self.args.data_path, self.args.dataset_name)
@@ -138,26 +140,32 @@ class Runner:
                 #     self.writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
                 start = time.time()
                 model.train()
-                opt.zero_grad()
+                # opt.zero_grad()
                 graph_ids = batch.graph_id
                 batch.to(device)
                 ll, _ = model.forward_train(graph_ids, batch, num_nodes)
                 loss = -ll / num_nodes
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
-                opt.step()
-                loss_ = loss.item()
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
+                # opt.step()
+                loss = loss.item()
                 if self.writer is not None:
-                    self.writer.add_scalar('Loss/Train', loss_, iter_count)
-                results['train_loss'] += [loss_]
+                    self.writer.add_scalar('Loss/Train', loss, iter_count)
+                results['train_loss'] += [loss]
                 results['train_step'] += [iter_count]
+                if (iter_count + 1) % self.args.experiment.train.accum_grad == 0:
+                    print('Grad stepping')
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
+                    opt.step()
+                    opt.zero_grad()
                 if iter_count % self.args.experiment.train.display_iters == 0:
-                    print(f'Iteration: {iter_count} | Train Loss: {loss_: .3f} | '
+                    print(f'Iteration: {iter_count} | Train Loss: {loss: .3f} | '
                           f'Epoch: {epoch} | '
                           f'Best Validation: {self.validator.best_val_loss: .3f} @ epoch {self.validator.best_epoch} | '
                           f'Last Val Loss: {self.validator.val_losses[-1]: .3f} | '
                           f'Total Train Time: {(time.time() - train_start) / 60: .3f}m | '
                           f'Last Epoch Time: {epoch_time: .3f}s | ')
+                iter_count += 1
                       # f'LR: {scheduler.get_last_lr()[0]: .6f}')
             if epoch % self.args.experiment.validation.val_epochs == 0:
                 stop = self.validator.validate(epoch)
@@ -175,7 +183,7 @@ class Runner:
         with open('experiment_files/last_train.txt', 'w') as f:
             f.write(self.args.save_dir)
         if self.writer is not None:
-            self.writer.add_text('Loss/Corrections', str(self.validator.correction_epochs))
+            # self.writer.add_text('Loss/Corrections', str(self.validator.correction_epochs))
             end_time = time.time() - self.train_start
             self.writer.add_text('Training Time', f'{end_time / 60: .3f} Minutes')
             self.writer.add_text('Args', pretty_json(self.args))
