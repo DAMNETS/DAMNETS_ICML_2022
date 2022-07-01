@@ -335,11 +335,11 @@ if __name__ == '__main__':
     print('------ Mean MMDS ------')
     print(mmds.mean())
     ## Produce dataset-specific plots.
-    if dataset_name == '3_comm_decay':
+    if dataset_name[:12] == '3_comm_decay' or dataset_name == '3_comm_total_decay':
         make_three_comm_plots(sampled_ts, test_ts, model_name, save_dir=output_dir)
     elif dataset_name == 'ba':
         make_ba_plots(sampled_ts, test_ts, model_name, save_dir=output_dir)
-    elif dataset_name == 'bipartite_contraction':
+    elif dataset_name == 'bipartite_contraction_small':
         sb = compute_spectral_bipartivity(sampled_ts)
         print(sb)
         stats = pd.concat([stats, sb], axis=1)

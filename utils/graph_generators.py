@@ -2,6 +2,7 @@ import networkx as nx
 import numpy as np
 from utils.ba_ts_generator import barabasi_albert_graph_ts
 from utils.bipartite_contraction_generator import generate_bipartite_contraction_ts
+from utils.comm_decay_generator import generate_3_comm_decay_ts, generate_comm_total_decay_ts
 from functools import partial
 from multiprocessing import Pool
 from tqdm.contrib.concurrent import process_map
@@ -10,7 +11,10 @@ from tqdm.contrib.concurrent import process_map
 def generate_graphs(args):
     graph_type = args.name
     if graph_type == '3_comm_decay':
-        fn = n_community_decay_ts
+        # fn = n_community_decay_ts
+        fn = generate_3_comm_decay_ts
+    if graph_type == '3_comm_total_decay':
+        fn = generate_comm_total_decay_ts
     elif graph_type == '3_comm_const':
         fn = n_community_const_ts
     # Used for testing models

@@ -1,0 +1,9 @@
+name: 3_comm_total_decay
+N: 200
+T: 20
+n_communities: 3
+c_sizes: [30, 30, 30]
+p_int: 0.9
+p_ext: 0.0
+decay_prop: 0.1
+seed: 123
