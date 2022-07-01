@@ -69,8 +69,8 @@ class Runner:
         self.train_start = time.time()
         epoch_time = 0
         for epoch in range(self.exp_args.train.epochs):
+            start = time.time()
             for batch in train_loader:
-                start = time.time()
                 model.train()
                 # opt.zero_grad()
                 loss = model(batch).mean()  # Loss already averaged within batch in fwd, we average over gpus here
@@ -83,7 +83,6 @@ class Runner:
                 results['train_loss'] += [loss]
                 results['train_step'] += [iter_count]
                 if (iter_count + 1) % self.args.experiment.train.accum_grad == 0:
-                    print('Grad Stepping.')
                     torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
                     opt.step()
                     opt.zero_grad()
