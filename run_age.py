@@ -36,7 +36,7 @@ def main():
     c_args = parse_arguments()
     if c_args.test:
         if c_args.config_file == '':
-            with open('experiment_files/last_train.txt', 'r') as f:
+            with open('experiment_files/last_age_train.txt', 'r') as f:
                 config_file = os.path.join(f.readline(), 'config.yaml')
         else:
             config_file = c_args.config_file

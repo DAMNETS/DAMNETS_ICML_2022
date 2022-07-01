@@ -7,7 +7,8 @@ import utils.graph_utils as graph_utils
 from utils.arg_helper import get_config
 from baselines.DYMOND.DYMOND import get_dataset, learn_parameters, dymond_generate
 from multiprocessing import Pool
-
+from tqdm.contrib.concurrent import process_map
+from tqdm import tqdm
 
 def create_directories(fstr, train_graphs):
     try:
@@ -25,7 +26,7 @@ def create_directories(fstr, train_graphs):
 
 
 def create_dymond_datasets(fstr):
-    for entry in os.scandir(fstr):
+    for entry in tqdm(list(os.scandir(fstr))):
         ts = graph_utils.load_graph_ts(os.path.join(entry.path, f'nx_{entry.name}.pkl'))
         edgelist = []
         edge_timesteps = []
@@ -64,11 +65,13 @@ def create_dymond_datasets(fstr):
 def train_test_dymond(path):
     # for entry in os.scandir(fstr):
     dataset_dir, dataset_info, g = get_dataset(dataset_dir=path)
+    print('Learning Parameters')
     learn_parameters(dataset_dir, dataset_info, g)
+    print('Generating')
     dymond_generate(dataset_dir, dataset_info['T'] + 1)
 
 
-def run_dymond(graphs_file, output_dir):
+def run_dymond(graphs_file, output_dir, n_workers=8):
     # if test_dir is None:
     #     with open('experiment_files/last_test.txt', 'r') as f:
     #         test_dir = f.readline()
@@ -78,26 +81,35 @@ def run_dymond(graphs_file, output_dir):
     # if graphs_file is None:
     #     graphs_file = 'test_graphs.pkl'
     # train_graphs = graph_utils.load_graph_ts(os.path.join(test_dir, graphs_file))
+    print('Loading Graphs')
     train_graphs = graph_utils.load_graph_ts(graphs_file)
+    print('Loaded.')
     T = len(train_graphs[0])
     fstr = os.path.join(output_dir, 'train_edgelists')
-
+    print('Creating directories')
     create_directories(fstr, train_graphs)
+    print('Creating Datasets')
     create_dymond_datasets(fstr)
     dirs = [entry.path for entry in os.scandir(fstr)]
     if len(dirs) == 1:
         train_test_dymond(dirs[0])
     else:
-        with Pool() as p:
-            p.map(train_test_dymond, dirs)
+        # for dir in tqdm(dirs):
+        #     train_test_dymond(dir)
+        #map(train_test_dymond, dirs)
+        process_map(train_test_dymond, dirs, max_workers=n_workers)
+        # with Pool() as p:
+        #     p.map(train_test_dymond, dirs)
     ts_list = []
-
-    for entry in os.scandir(fstr):
+    num_nodes = nx.number_of_nodes(train_graphs[0][0])
+    print('Collecting output')
+    for entry in tqdm(os.scandir(fstr)):
         sampled_ts = []
         sampled_fstr = os.path.join(entry.path, 'learned_parameters/generated_graph/generated_graph.pklz')
         ig_ts = igraph.Graph().Read_Picklez(sampled_fstr)
         for t in range(1, T + 1):
-            g = nx.from_edgelist(list(e.tuple for e in ig_ts.es.select(lambda e: e['timestep'] == t)))
+            g = nx.empty_graph(num_nodes)
+            g.add_edges_from(list(e.tuple for e in ig_ts.es.select(lambda e: e['timestep'] == t)))
             sampled_ts.append(g)
         ts_list.append(sampled_ts)
 
