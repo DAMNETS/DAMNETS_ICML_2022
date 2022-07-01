@@ -55,7 +55,7 @@ def compute_adj_delta(ts, abs=True):
 
 
 def wrapper(x, fn):
-    return fn()
+    return fn(seed=x)
 
 
 def n_community_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0.2, **kwargs):
