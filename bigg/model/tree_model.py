@@ -502,7 +502,7 @@ class RecurTreeGen(nn.Module):
         # row states are collapsed across the batch, so N * n * H - NOTE: Next states not used in this function -
         row_states, next_states = self.row_tree.forward_train(*(fn_hc_bot(0)), h_buf_list[0], c_buf_list[0], *prev_rowsum_states)
         # make prediction at root.
-        if self.use_attn:
+        if self.use_attn:  # attention weighted sum of gnn embeddings.
             pe = self.prev_pos_enc([i for i in range(n)]).repeat(int(gnn_embeds.shape[0] / n), 1)
             gnn_embeds = gnn_embeds + pe
             gnn_embeds = gnn_embeds.reshape(-1, n, self.embed_dim)
