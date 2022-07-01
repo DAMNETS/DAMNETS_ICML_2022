@@ -33,10 +33,10 @@ def degree_stats(graph_ref_list, graph_pred_list, is_parallel=True):
   sample_ref = []
   sample_pred = []
   # in case an empty graph is generated
-  graph_pred_list_remove_empty = [
-      G for G in graph_pred_list if not G.number_of_nodes() == 0
-  ]
-
+  # graph_pred_list_remove_empty = [
+  #     G for G in graph_pred_list if not G.number_of_nodes() == 0
+  # ]
+  graph_pred_list_remove_empty = graph_pred_list
   prev = datetime.now()
   if is_parallel:
     with concurrent.futures.ThreadPoolExecutor() as executor:
