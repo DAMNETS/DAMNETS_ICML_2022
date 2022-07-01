@@ -5,6 +5,7 @@ import numpy as np
 from utils.arg_helper import get_config
 import os
 import collections
+import math
 import pandas as pd
 import multiprocessing
 from functools import partial
@@ -89,7 +90,7 @@ def plot_community_eval(sampled_ts, true_ts, subgraph_nodes, ax, label, model_na
 def s_catch(g, s_fun=None):
     try:
         res = s_fun(g)
-    except ZeroDivisionError:
+    except:
         res = 0
     return res
 
@@ -149,19 +150,31 @@ def plot_network_statistics(stats, save_dir='', tag=''):
     save_path = os.path.join(save_dir, tag + 'network_statistics.pdf')
     plt.savefig(save_path, format='pdf', dpi=1200, bbox_inches='tight')
 
-def statistics_compute_cpl(G):
-    """Compute characteristic path length."""
-    A = nx.to_numpy_array(G)
-    P = sp.csgraph.shortest_path(sp.csr_matrix(A))
-    return P[((1 - np.isinf(P)) * (1 - np.eye(P.shape[0]))).astype(np.bool)].mean()
+# def statistics_compute_cpl(G):
+#     """Compute characteristic path length."""
+#     A = nx.to_numpy_array(G)
+#     P = sp.csgraph.shortest_path(sp.csr_matrix(A))
+#     return P[((1 - np.isinf(P)) * (1 - np.eye(P.shape[0]))).astype(np.bool)].mean()
 
+def compute_avg_closeness(G):
+    return np.mean([val for ix, val in nx.closeness_centrality(G).items()])
+
+def compute_assortativity(G):
+    try:
+        assort = nx.degree_assortativity_coefficient(G)
+        if math.isnan(assort):
+            assort = 0
+    except Exception as e:
+        print(e)
+        assort = 0
+    return assort
 
 def compute_network_statistics(ts_list, model_name):
     s_funs = {'Density': nx.density,
               'Clustering' : nx.average_clustering,
               'Transitivity': nx.transitivity,
-              'Assortativity': nx.degree_assortativity_coefficient,
-              'CP': statistics_compute_cpl,}
+              'Assortativity': compute_assortativity,
+              'Closeness': compute_avg_closeness,}
               # 'Claw': statistics_claw_count}
     dfs = []
     print('Computing statistics for model', model_name)
@@ -218,7 +231,8 @@ def mmd_from_multi(test_df, model_df, statistic_name):
     test_raw = to_numpy_batch(test_df[statistic_name, 'raw'])
     try:
         mmd = mmd_rbf(model_raw, test_raw)
-    except:
+    except Exception as e:
+        print(e)
         mmd = np.nan
     return mmd
 
@@ -227,15 +241,15 @@ def compute_global_mmds(stats):
     for model in stats.drop('Test', axis=1).columns.get_level_values(0).unique():
         trans_mmd = []
         assort_mmd = []
-        cp_mmd = []
+        cc_mmd = []
         for t in tqdm(range(1, len(stats.index))):
             test_stats_t = stats.loc[t]['Test']
             model_stats_t = stats.loc[t][model]
             trans_mmd.append(mmd_from_multi(test_stats_t, model_stats_t, 'Transitivity'))
             assort_mmd.append(mmd_from_multi(test_stats_t, model_stats_t, 'Assortativity'))
-            cp_mmd.append(mmd_from_multi(test_stats_t, model_stats_t, 'CP'))
-        index = pd.MultiIndex.from_tuples([(model, 'Trans_MMD'), (model, 'Assort_MMD'), (model, 'CP_MMD')])
-        mmds = np.array([trans_mmd, assort_mmd, cp_mmd]).T
+            cc_mmd.append(mmd_from_multi(test_stats_t, model_stats_t, 'Closeness'))
+        index = pd.MultiIndex.from_tuples([(model, 'Trans_MMD'), (model, 'Assort_MMD'), (model, 'CC_MMD')])
+        mmds = np.array([trans_mmd, assort_mmd, cc_mmd]).T
         dfs.append(pd.DataFrame(mmds, columns=index))
     return pd.concat(dfs, axis=1)
 
