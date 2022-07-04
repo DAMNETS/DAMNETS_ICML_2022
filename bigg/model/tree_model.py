@@ -29,7 +29,6 @@ from tqdm import tqdm
 from bigg.model.util import AdjNode, ColAutomata, AdjRow
 from bigg.model.tree_clib.tree_lib import TreeLib
 from bigg.torch_ops import multi_index_select, PosEncoding
-from torch_geometric.nn import GCN, GAT
 
 
 def hc_multi_select(ids_from, ids_to, h_froms, c_froms):
@@ -212,10 +211,10 @@ class BitsRepNet(nn.Module):
 
 
 class RecurTreeGen(nn.Module):
-    def __init__(self, model_args):
+    def __init__(self, args):
         super(RecurTreeGen, self).__init__()
-        args = model_args.bigg
-        gnn_args = model_args.gnn
+        # args = model_args.bigg
+        # gnn_args = model_args.gnn
         self.directed = args.directed
         self.self_loop = args.self_loop
         self.bits_compress = args.bits_compress
@@ -271,14 +270,16 @@ class RecurTreeGen(nn.Module):
         else:
             self.tree_pos_enc = lambda x: 0
 
-        self.gnn = GAT(in_channels=args.max_num_nodes,
-                       hidden_channels=args.embed_dim,
-                       num_layers=gnn_args.num_layers,
-                       heads=gnn_args.heads,
-                       )
-        self.attn = nn.MultiheadAttention(args.embed_dim, num_heads=1, batch_first=True)
-        self.prev_pos_enc = PosEncoding(args.embed_dim, args.device, args.pos_base, bias=np.pi / 4)
+        # self.gnn = GAT(in_channels=args.max_num_nodes,
+        #                hidden_channels=args.embed_dim,
+        #                num_layers=gnn_args.num_layers,
+        #                dropout=gnn_args.dropout,
+        #                heads=gnn_args.heads,
+        #                )
         self.use_attn = args.use_attn
+        if args.use_attn:
+            self.attn = nn.MultiheadAttention(args.embed_dim, num_heads=1, batch_first=True)
+            self.prev_pos_enc = PosEncoding(args.embed_dim, args.device, args.pos_base, bias=np.pi / 4)
 
     def cell_topdown(self, x, y, lv):
         cell = self.m_cell_topdown if self.share_param else self.cell_topdown_modules[lv]
@@ -402,9 +403,9 @@ class RecurTreeGen(nn.Module):
                 summary_state = self.lr2p_cell(left_state, right_state)
             return ll, summary_state, num_left + num_right
 
-    def forward(self, node_end, edges, node_feat, edge_list=None, node_start=0, list_states=[], lb_list=None, ub_list=None, col_range=None, num_nodes=None, display=False):
+    def forward(self, node_end, gnn_embeds, edge_list=None, node_start=0, list_states=[], lb_list=None, ub_list=None, col_range=None, num_nodes=None, display=False):
         self.eval()
-        gnn_embeds = self.gnn(node_feat, edges)
+        # gnn_embeds = self.gnn(node_feat, edges)
         pos = 0
         total_ll = 0.0
         edges = []
@@ -494,10 +495,9 @@ class RecurTreeGen(nn.Module):
         row_states, next_states = self.row_tree.forward_train(*(fn_hc_bot(0)), h_buf_list[0], c_buf_list[0], *prev_rowsum_states)
         return row_states, next_states
 
-    def forward_train(self, graph_ids, batch, n,
+    def forward_train(self, graph_ids, gnn_embeds, n,
                       list_node_starts=None,
                       num_nodes=-1, prev_rowsum_states=[None, None], list_col_ranges=None):
-        gnn_embeds = self.gnn(batch.x, batch.edge_index)
         fn_hc_bot, h_buf_list, c_buf_list = self.forward_row_trees(graph_ids, list_node_starts, num_nodes, list_col_ranges)
         # row states are collapsed across the batch, so N * n * H - NOTE: Next states not used in this function -
         row_states, next_states = self.row_tree.forward_train(*(fn_hc_bot(0)), h_buf_list[0], c_buf_list[0], *prev_rowsum_states)

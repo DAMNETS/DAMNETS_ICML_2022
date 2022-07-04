@@ -20,6 +20,7 @@ from utils.gnn_validator import GNNValidator
 import utils.graph_utils as graph_utils
 from bigg.model.tree_clib.tree_lib import setup_treelib, TreeLib
 from bigg.model.tree_model import RecurTreeGen
+from models.damnets_pos_neg import DamnetsPosNeg
 from torch_geometric.utils.convert import from_networkx
 from torch_geometric.loader import DataLoader
 import json
@@ -50,46 +51,12 @@ class Runner:
             self.validator = None
             self.writer = SummaryWriter(args.save_dir) if self.exp_args.train.use_writer else None
 
-    def make_loader(self, graph_ts, start_idx=0):
-        '''
-        Prepare the data into dataloader format. This involves computing the delta matrices for the
-        network time series, inserting them into the TreeLib and then putting them into torch geometric
-        format for computation.
-        Args:
-            graph_ts: The time series to build a loader for
-            start_idx: If some time-series have already been inserted into the loader, we want to start indexing
-            from the index of the last one in the previous batch. This is used for training and validation split.
-        Returns: A pytorch dataloader that loads the previous network combined with the index in the TreeLib of the
-        associated delta matrix we want to learn.
-        '''
-        print('Computing Deltas')
-        with mp.Pool(self.exp_args.train.n_workers) as p:
-            diffs = list(tqdm(p.imap(compute_adj_delta, graph_ts), total=len(graph_ts)))
-        # diffs = [compute_adj_delta(ts) for ts in tqdm(graph_ts)]
-        graph_ts = [ts[:-1] for ts in graph_ts]
-        # Flatten them out for insertion into the treelib.
-        diffs = [nx.Graph(diff) for diff_ts in diffs for diff in diff_ts]
-        graph_ts = [g for ts in graph_ts for g in ts]
-        print('Inserting into TreeLib')
-        for d in tqdm(diffs):
-            TreeLib.InsertGraph(d)
-        num_nodes = graph_ts[0].number_of_nodes()
-        print('Convering to networkx format')
-        with mp.Pool(self.exp_args.train.n_workers) as p:
-            data = list(tqdm(p.imap(from_networkx, graph_ts), total=len(graph_ts)))
-        # data = [from_networkx(g) for g in tqdm(graph_ts)]  # convert to torch_geometric format w/ edgelists.
-        one_hot = torch.eye(num_nodes)
-        for i in range(len(data)):
-            data[i].x = one_hot
-            data[i].graph_id = i + start_idx
-        return DataLoader(data,
-                          batch_size=self.exp_args.train.batch_size,
-                          shuffle=self.exp_args.train.shuffle_data,
-                          pin_memory=True)
 
-    def _make_loader(self, graphs, deltas):
-        for d in tqdm(deltas):
-            TreeLib.InsertGraph(d)
+    def _make_loader(self, graphs, pos_deltas, neg_deltas):
+        assert len(pos_deltas) == len(neg_deltas)
+        for i in tqdm(range(len(pos_deltas))):
+            TreeLib.InsertGraph(pos_deltas[i])
+            TreeLib.InsertGraph(neg_deltas[i])
         return DataLoader(graphs,
                           batch_size=self.exp_args.train.batch_size,
                           shuffle=self.exp_args.train.shuffle_data,
@@ -97,9 +64,9 @@ class Runner:
     def train(self):
         # Create data loader
         dataset = os.path.join(self.args.data_path, self.args.dataset_name)
-        train_graphs, train_deltas = graph_utils.load_graph_ts(dataset + '_train_graphs.pkl')
-        val_graphs, val_deltas = graph_utils.load_graph_ts(dataset + '_val_graphs.pkl')
-        num_nodes = nx.number_of_nodes(train_deltas[0])
+        train_graphs, train_pos_deltas, train_neg_deltas = graph_utils.load_graph_ts(dataset + '_train_graphs.pkl')
+        val_graphs, val_pos_deltas, val_neg_deltas = graph_utils.load_graph_ts(dataset + '_val_graphs.pkl')
+        num_nodes = nx.number_of_nodes(train_pos_deltas[0])
         device = self.exp_args.device
         ## set bigg args for compatability
         self.model_args.bigg.gpu = -1 if device == 'cpu' else device
@@ -108,10 +75,12 @@ class Runner:
         self.model_args.bigg.max_num_nodes = num_nodes
         setup_treelib(self.model_args.bigg)
 
-        train_loader = self._make_loader(train_graphs, train_deltas)
-        val_loader = self._make_loader(val_graphs, val_deltas)
+        train_loader = self._make_loader(train_graphs, train_pos_deltas, train_neg_deltas)
+        val_loader = self._make_loader(val_graphs, val_pos_deltas, val_neg_deltas)
         print('All data prepared. Loading model.')
-        model = RecurTreeGen(self.model_args).to(device)
+        model = DamnetsPosNeg(self.model_args).to(device)
+        # model_pos = RecurTreeGen(self.model_args).to(device)
+        # model_neg = RecurTreeGen(self.model_args).to(device)
         if self.writer is not None:
             self.writer.add_text('Model', str(model))
 
@@ -136,18 +105,15 @@ class Runner:
         epoch_time = 0
         for epoch in range(self.exp_args.train.epochs):
             start = time.time()
+            model.train()
             for batch in train_loader:
-                # if self.writer is not None:
-                #     self.writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
-                model.train()
-                # opt.zero_grad()
-                graph_ids = batch.graph_id
+                pos_ids = batch.pos_id
+                neg_ids = batch.neg_id
                 batch.to(device)
-                ll, _ = model.forward_train(graph_ids, batch, num_nodes)
-                loss = -ll / num_nodes
+                loss = model.forward_train(batch, pos_ids, neg_ids, num_nodes)
+                # ll, _ = model.forward_train(batch, pos_ids, neg_ids, num_nodes)
+                # loss = -ll / (num_nodes * len(graph_ids))
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm_(model.parameters(), self.exp_args.train.clip_grad)
-                # opt.step()
                 loss = loss.item()
                 if self.writer is not None:
                     self.writer.add_scalar('Loss/Train', loss, iter_count)
@@ -199,7 +165,8 @@ class Runner:
         self.model_args.bigg.seed = self.args.seed
         setup_treelib(self.model_args.bigg)
 
-        model = RecurTreeGen(self.model_args).to(device)
+        model = DamnetsPosNeg(self.model_args).to(device)
+        # model = RecurTreeGen(self.model_args).to(device)
         best_markov_file = os.path.join(self.args.model_save_dir,
                                        f'{self.args.experiment.best_val_epoch}.pt')
         print(f'Best Model File : {best_markov_file}')
@@ -212,15 +179,17 @@ class Runner:
                 samples_ts = [ts[0]]
                 for g in ts[:-1]:
                     ## Convert to adjacency for GNN
-                    edges = from_networkx(g).edge_index.to(0)
-                    node_feat = torch.eye(num_nodes).to(0)
-                    _, pred_edges, _ = model(num_nodes, edges, node_feat)
-                    pred_g = nx.empty_graph(num_nodes)
-                    # Build the delta matrix
-                    pred_g.add_edges_from(pred_edges)
-                    delta = nx.to_numpy_array(pred_g)
+                    edges = from_networkx(g).edge_index.to(device)
+                    node_feat = torch.eye(num_nodes).to(device)
+                    # _, pred_edges, _ = model(num_nodes, edges, node_feat)
+                    # pred_g = nx.empty_graph(num_nodes)
+                    # # Build the delta matrix
+                    # pred_g.add_edges_from(pred_edges)
+                    # delta = nx.to_numpy_array(pred_g)
+                    delta = model(num_nodes, edges, node_feat)
                     adj = nx.to_numpy_array(g)
-                    adj = (adj + delta) % 2
+                    # adj = (adj + delta) % 2
+                    adj = (adj + delta).clip(0, 1)
                     samples_ts.append(nx.Graph(adj))
                     pbar.update()
                 sampled_ts_list.append(samples_ts)

@@ -67,7 +67,8 @@ class _tree_lib(object):
         self.lib.NumLeftBot.restype = ctypes.c_int
         self.lib.GetNumNextStates.restype = ctypes.c_int
 
-        args = 'this -bits_compress %d -embed_dim %d -gpu %d -bfs_permute %d -seed %d' % (config.bits_compress, config.embed_dim, config.gpu, config.bfs_permute, config.seed)
+        args = 'this -bits_compress %d -embed_dim %d -gpu %d -bfs_permute %d -seed %d -max_num_nodes %d' \
+               % (config.bits_compress, config.embed_dim, config.gpu, config.bfs_permute, config.seed, config.max_num_nodes)
         args = args.split()
         if sys.version_info[0] > 2:
             args = [arg.encode() for arg in args]  # str -> bytes for each element in args
@@ -241,12 +242,12 @@ class _tree_lib(object):
         return init_ids, all_ids, last_ids, next_ids, torch.tensor(np_pos, dtype=torch.float32).to(self.device)
 
     def GetChLabel(self, lr, depth=-1, dtype=None):
-        if lr == 0:
+        if lr == 0:  # == root
             total_nodes = np.sum(self.list_nnodes)
             has_ch = np.empty((total_nodes,), dtype=np.int32)
             self.lib.HasChild(ctypes.c_void_p(has_ch.ctypes.data))
             num_ch = None
-        else:
+        else: # left or right.
             n = self.lib.NumInternalNodes(depth)
             has_ch = np.empty((n,), dtype=np.int32)
             self.lib.GetChMask(lr, depth,

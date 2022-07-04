@@ -48,8 +48,10 @@ class GNNValidator:
         with torch.no_grad():
             loss = 0
             for batch in self.val_loader:
-                graph_ids = batch.graph_id
+                pos_ids = batch.pos_id
+                neg_ids = batch.neg_id
                 batch.to(self.exp_args.device)
-                ll, _ = self.model.forward_train(graph_ids, batch, self.num_nodes)
-                loss += -ll / self.num_nodes
-        return loss.item() / len(self.val_loader)
+                loss_ = self.model.forward_train(batch, pos_ids, neg_ids, self.num_nodes)
+                # ll, _ = self.model.forward_train(graph_ids, batch, self.num_nodes)
+                loss += loss_.item()
+        return loss / len(self.val_loader)
