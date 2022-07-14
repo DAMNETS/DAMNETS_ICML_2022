@@ -56,7 +56,7 @@ class AdjNode(object):
             bits = []
             if self.lch._bits_rep is not None:
                 offset = self.rch.col_range[1] - self.rch.col_range[0]
-                bits += [x + offset for x in self.lch._bits_rep]
+                bits += [(x + offset, sign) for x, sign in self.lch._bits_rep]
             if self.rch._bits_rep is not None:
                 bits += self.rch._bits_rep
             self._bits_rep = bits
@@ -98,18 +98,18 @@ class ColAutomata(object):
     @property
     def last_edge(self):
         if self.pos < len(self.indices):
-            return self.indices[-1]
+            return self.indices[-1][0]
         else:
             return None
 
-    def add_edge(self, col_idx):
+    def add_edge(self, col_idx, sign):
         self.pos += 1
         if not self.supervised:
-            self.indices.append(col_idx)
+            self.indices.append((col_idx, sign))
 
     def has_edge(self, range_start, range_end):
         for i in self.indices:
-            if i >= range_start and i < range_end:
+            if i[0] >= range_start and i[0] < range_end:
                 return True
         return False
 

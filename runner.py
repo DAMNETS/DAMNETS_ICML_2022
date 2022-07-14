@@ -21,6 +21,7 @@ import utils.graph_utils as graph_utils
 from bigg.model.tree_clib.tree_lib import setup_treelib, TreeLib
 from bigg.model.tree_model import RecurTreeGen
 from models.damnets_pos_neg import DamnetsPosNeg
+from models.damnets_signed import DamnetsSigned
 from torch_geometric.utils.convert import from_networkx
 from torch_geometric.loader import DataLoader
 import json
@@ -32,31 +33,18 @@ class Runner:
         self.exp_args = args.experiment
         if not is_test:
             print('Mode: Training | Loading Graphs')
-            # train_graphs = graph_utils.load_graph_ts(args.data_file)
-            ## Set number of nodes for bigg model (keep names same for compatability)
-            # self.model_args.bigg.max_num_nodes = nx.number_of_nodes(self.train_graphs[0][0])
-            # print('Number of Training TS: ', len(self.train_graphs))
-            # print('Number of Val TS: ', len(self.val_graphs))
-            # print('TS length (T): ', len(test_graphs[0]))
-            # print('Saving Graphs')
-            # graph_utils.save_graph_list(
-            #     self.train_graphs, os.path.join(self.args.save_dir, 'train_graphs.pkl'))
-            # graph_utils.save_graph_list(
-            #     self.val_graphs, os.path.join(self.args.save_dir, 'val_graphs.pkl'))
-            # graph_utils.save_graph_list(
-            #     test_graphs, os.path.join(self.args.save_dir, 'test_graphs.pkl'))
-            # args.experiment.graph_save_dir = self.args.save_dir
 
             self.train_loss = None
             self.validator = None
             self.writer = SummaryWriter(args.save_dir) if self.exp_args.train.use_writer else None
 
 
-    def _make_loader(self, graphs, pos_deltas, neg_deltas):
-        assert len(pos_deltas) == len(neg_deltas)
-        for i in tqdm(range(len(pos_deltas))):
-            TreeLib.InsertGraph(pos_deltas[i])
-            TreeLib.InsertGraph(neg_deltas[i])
+    def _make_loader(self, zipped):
+        graphs = []
+        for g, delta in zipped:
+            g_id = TreeLib.InsertGraph(delta)
+            g.graph_id = g_id
+            graphs.append(g)
         return DataLoader(graphs,
                           batch_size=self.exp_args.train.batch_size,
                           shuffle=self.exp_args.train.shuffle_data,
@@ -64,9 +52,9 @@ class Runner:
     def train(self):
         # Create data loader
         dataset = os.path.join(self.args.data_path, self.args.dataset_name)
-        train_graphs, train_pos_deltas, train_neg_deltas = graph_utils.load_graph_ts(dataset + '_train_graphs.pkl')
-        val_graphs, val_pos_deltas, val_neg_deltas = graph_utils.load_graph_ts(dataset + '_val_graphs.pkl')
-        num_nodes = nx.number_of_nodes(train_pos_deltas[0])
+        train_zipped = graph_utils.load_graph_ts(dataset + '_train_graphs.pkl')
+        val_zipped = graph_utils.load_graph_ts(dataset + '_val_graphs.pkl')
+        num_nodes = nx.number_of_nodes(train_zipped[0][1])
         device = self.exp_args.device
         ## set bigg args for compatability
         self.model_args.bigg.gpu = -1 if device == 'cpu' else device
@@ -75,18 +63,14 @@ class Runner:
         self.model_args.bigg.max_num_nodes = num_nodes
         setup_treelib(self.model_args.bigg)
 
-        train_loader = self._make_loader(train_graphs, train_pos_deltas, train_neg_deltas)
-        val_loader = self._make_loader(val_graphs, val_pos_deltas, val_neg_deltas)
+        train_loader = self._make_loader(train_zipped)
+        val_loader = self._make_loader(val_zipped)
         print('All data prepared. Loading model.')
-        model = DamnetsPosNeg(self.model_args).to(device)
-        # model_pos = RecurTreeGen(self.model_args).to(device)
-        # model_neg = RecurTreeGen(self.model_args).to(device)
+        model = DamnetsSigned(self.model_args).to(device)
         if self.writer is not None:
             self.writer.add_text('Model', str(model))
 
         print(model)
-        # train_loader = self.make_loader(self.train_graphs)
-        # val_loader = self.make_loader(self.val_graphs, start_idx=len(self.train_graphs))
         self.validator = GNNValidator(val_loader, model, self.args, self.writer)
         opt = optim.Adam(model.parameters(),
                          lr=self.exp_args.train.lr,
@@ -107,12 +91,9 @@ class Runner:
             start = time.time()
             model.train()
             for batch in train_loader:
-                pos_ids = batch.pos_id
-                neg_ids = batch.neg_id
+                graph_ids = batch.graph_id
                 batch.to(device)
-                loss = model.forward_train(batch, pos_ids, neg_ids, num_nodes)
-                # ll, _ = model.forward_train(batch, pos_ids, neg_ids, num_nodes)
-                # loss = -ll / (num_nodes * len(graph_ids))
+                loss = model.forward_train(batch.x, batch.edge_index, graph_ids, num_nodes) / len(graph_ids)
                 loss.backward()
                 loss = loss.item()
                 if self.writer is not None:
@@ -135,6 +116,9 @@ class Runner:
             if epoch % self.args.experiment.validation.val_epochs == 0:
                 stop = self.validator.validate(epoch)
                 scheduler.step(self.validator.val_losses[-1])
+                if scheduler.cooldown_counter == self.exp_args.validation.cooldown:
+                    # So that it doesn't early stop right after a lr decay
+                    self.validator.update_buffer(epoch)
                 if stop:
                     print('EARLY STOPPING TRIGGERED')
                     break
@@ -165,32 +149,32 @@ class Runner:
         self.model_args.bigg.seed = self.args.seed
         setup_treelib(self.model_args.bigg)
 
-        model = DamnetsPosNeg(self.model_args).to(device)
-        # model = RecurTreeGen(self.model_args).to(device)
-        best_markov_file = os.path.join(self.args.model_save_dir,
-                                       f'{self.args.experiment.best_val_epoch}.pt')
-        print(f'Best Model File : {best_markov_file}')
-        load_model(model, best_markov_file)
+        # TODO: add support for loading a generic snapshot.
+        model = DamnetsSigned(self.model_args).to(device)
+        load_model(model, os.path.join(self.args.model_save_dir, 'val.pt'))
         sampled_ts_list = []
         model.eval()
         pbar = tqdm(total=len(test_list) * (len(test_list[0]) - 1))
         with torch.no_grad():
             for ts in test_list:
                 samples_ts = [ts[0]]
-                for g in ts[:-1]:
+                for g_ in ts[:-1]:
+                    g = nx.Graph(g_)
                     ## Convert to adjacency for GNN
                     edges = from_networkx(g).edge_index.to(device)
                     node_feat = torch.eye(num_nodes).to(device)
-                    # _, pred_edges, _ = model(num_nodes, edges, node_feat)
-                    # pred_g = nx.empty_graph(num_nodes)
-                    # # Build the delta matrix
-                    # pred_g.add_edges_from(pred_edges)
-                    # delta = nx.to_numpy_array(pred_g)
-                    delta = model(num_nodes, edges, node_feat)
-                    adj = nx.to_numpy_array(g)
-                    # adj = (adj + delta) % 2
-                    adj = (adj + delta).clip(0, 1)
-                    samples_ts.append(nx.Graph(adj))
+                    delta_entries = model(num_nodes, node_feat, edges)
+                    # Add the sampled new edges
+                    new_edges = [(i, j) for i, j, w in delta_entries if w == 1]
+                    print(f'Num additions: {len(new_edges)}')
+                    g.add_edges_from(new_edges)
+                    # Remove the samples deletions
+                    deletions = [(i, j) for i, j, w in delta_entries if w == -1]
+                    print(f'Num removals: {len(deletions)}')
+                    g.remove_edges_from(deletions)
+                    # NOTE: add/remove edges_from silently fails if edge already exists or doesn't exist.
+                    # This is intended behaviour for us.
+                    samples_ts.append(g)
                     pbar.update()
                 sampled_ts_list.append(samples_ts)
 

@@ -147,22 +147,22 @@ class Runner:
         assert len(ts_list) == len(graphs)
         return ts_list
 
-    def test_(self):
-        gpus = self.exp_args.gpus
-        # device = self.exp_args.gpus[0]
-        test_graphs = graph_utils.load_graph_ts(
-            os.path.join(self.args.experiment.test.graph_dir, 'test_graphs.pkl'))
-        model = eval(self.model_args.name)(self.args)#.to(device)
-        model = torch.nn.DataParallel(model, device_ids=None, output_device=gpus[0]).to(gpus[0])
-        ## Sample the Markov Results
-        best_markov_file = os.path.join(self.args.model_save_dir,
-                                       f'{self.args.experiment.test.best_val_epoch}.pt')
-        print(f'Best Model File : {best_markov_file}')
-        load_model(model, best_markov_file)
-        markov_ts = self.sample_nts(test_graphs, model)
-
-        with open('experiment_files/last_age_test.txt', 'w') as f:
-            f.write(self.args.save_dir)
+    # def test_(self):
+    #     gpus = self.exp_args.gpus
+    #     # device = self.exp_args.gpus[0]
+    #     test_graphs = graph_utils.load_graph_ts(
+    #         os.path.join(self.args.experiment.test.graph_dir, 'test_graphs.pkl'))
+    #     model = eval(self.model_args.name)(self.args)#.to(device)
+    #     model = torch.nn.DataParallel(model, device_ids=None, output_device=gpus[0]).to(gpus[0])
+    #     ## Sample the Markov Results
+    #     best_markov_file = os.path.join(self.args.model_save_dir,
+    #                                    f'{val}.pt')
+    #     # print(f'Best Model File : {best_markov_file}')
+    #     load_model(model, best_markov_file)
+    #     markov_ts = self.sample_nts(test_graphs, model)
+    #
+    #     with open('experiment_files/last_age_test.txt', 'w') as f:
+    #         f.write(self.args.save_dir)
 
 
     def test(self):
@@ -174,8 +174,8 @@ class Runner:
         self.args.model.input_size = num_nodes
         model = AGE(self.args).to(device)
         best_markov_file = os.path.join(self.args.model_save_dir,
-                                        f'{self.args.experiment.best_val_epoch}.pt')
-        print(f'Best Model File : {best_markov_file}')
+                                        'val.pt')
+        # print(f'Best Model File : {best_markov_file}')
         load_model(model, best_markov_file)
         sampled_ts_list = []
         model.eval()

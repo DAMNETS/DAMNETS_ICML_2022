@@ -15,13 +15,13 @@ def generate_graphs(args):
         fn = generate_3_comm_decay_ts
     if graph_type == '3_comm_total_decay':
         fn = generate_comm_total_decay_ts
+    # These two are for debugging.
     elif graph_type == '3_comm_const':
         fn = n_community_const_ts
-    # Used for testing models
     elif graph_type == '3_comm_interpolation':
-        g = n_community_const_ts(c_sizes=args.c_sizes, T=args.T, p=args.p_int,
+        ts = generate_3_comm_decay_ts(c_sizes=args.c_sizes, T=args.T, p_int=args.p_int,
                                              p_ext=args.p_ext)
-        ts_list = [g for _ in range(args.N)]
+        ts_list = [ts for _ in range(args.N)]
     elif graph_type == 'ba':
         fn = barabasi_albert_graph_ts
 

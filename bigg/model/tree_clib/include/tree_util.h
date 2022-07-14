@@ -31,7 +31,7 @@ class AdjNode
     ~AdjNode();
     void init(AdjNode* parent, int row, int col_begin, int col_end, int depth);
     void split();
-    void update_bits();
+    void update_bits(int weight);
 
     AdjNode *parent, *lch, *rch;
     int global_idx;
@@ -39,7 +39,9 @@ class AdjNode
     int depth, n_cols;
     bool is_leaf, is_root;
     bool has_edge, is_lowlevel;
-    BitSet bits_rep;
+    BitSet bits_rep_pos;
+    BitSet bits_rep_neg;
+    int weight = 0;
     int job_idx;
 };
 
@@ -53,7 +55,7 @@ class AdjRow
     ~AdjRow();
     void init(int row, int col_start, int col_end);
 
-    void insert_edges(std::vector<int>& col_indices);
+    void insert_edges(std::vector<std::pair<int, int> >& edge_list);
     AdjNode* root;
     int row, max_col;
 

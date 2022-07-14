@@ -27,16 +27,21 @@ try:
 except:
     print('no torch loaded')
 
+# weight_map = {1: 1, 0: -1, -1: 0}
 
 class CtypeGraph(object):
     def __init__(self, g):
         self.num_nodes = len(g)
         self.num_edges = len(g.edges())
 
+        adj = nx.to_numpy_array(g)
         self.edge_pairs = np.zeros((self.num_edges * 2, ), dtype=np.int32)
+        self.edge_signs = np.zeros((self.num_edges, ), dtype=np.int32)
         for i, (x, y) in enumerate(g.edges()):
             self.edge_pairs[i * 2] = x
             self.edge_pairs[i * 2 + 1] = y
+            # self.edge_signs[i] = weight_map[adj[x, y]]
+            self.edge_signs[i] = adj[x, y]
 
 
 class _tree_lib(object):
@@ -66,6 +71,11 @@ class _tree_lib(object):
         self.lib.NumInternalNodes.restype = ctypes.c_int
         self.lib.NumLeftBot.restype = ctypes.c_int
         self.lib.GetNumNextStates.restype = ctypes.c_int
+        self.lib.GetLeafLabels.restype = ctypes.c_int
+        self.lib.GetLeafMask.restype = ctypes.c_int
+
+        # self.lib.GetLeafLabels.restype = ctypes.c_int
+        # self.lib.NumLeafNodes.restype = ctypes.c_int
 
         args = 'this -bits_compress %d -embed_dim %d -gpu %d -bfs_permute %d -seed %d -max_num_nodes %d' \
                % (config.bits_compress, config.embed_dim, config.gpu, config.bfs_permute, config.seed, config.max_num_nodes)
@@ -97,7 +107,7 @@ class _tree_lib(object):
         else:
             n, m = bipart_stats
         self.lib.AddGraph(gid, ctype_g.num_nodes, ctype_g.num_edges,
-                          ctypes.c_void_p(ctype_g.edge_pairs.ctypes.data), n, m)
+                          ctypes.c_void_p(ctype_g.edge_pairs.ctypes.data), ctypes.c_void_p(ctype_g.edge_signs.ctypes.data), n, m)
         return gid
 
     def PrepareMiniBatch(self, list_gids, list_node_start=None, num_nodes=-1, list_col_ranges=None, new_batch=True):
@@ -137,9 +147,11 @@ class _tree_lib(object):
         max_d = self.lib.MaxTreeDepth()
 
         all_ids = []
+        # bot_froms handles the bottom nodes.
+        # prev_froms handles the internal nodes.
         for d in range(max_d + 1):
             ids_d = []
-            for i in range(2):
+            for i in range(2): # left, right
                 num_prev = self.lib.NumPrevDep(d, i)
                 num_bot = self.lib.NumBottomDep(d, i)
 
@@ -161,10 +173,15 @@ class _tree_lib(object):
     def PrepareBinary(self):
         max_d = self.lib.MaxBinFeatDepth()
         all_bin_feats = []
-        base_feat = torch.zeros(2, self.embed_dim)
-        base_feat[0, 0] = -1
-        base_feat[1, 0] = 1
+        # base_feat = torch.zeros(2, self.embed_dim)
+        # base_feat[0, 0] = -1
+        # base_feat[1, 0] = 1
+        base_feat = torch.ones(2, self.embed_dim) * -10.0
+        # base_feat[0, 0] = 0
+        # base_feat[1, 0] = 0  # TODO: why is this one? why not zero also?
         base_feat = base_feat.to(self.device)
+        # The +2 provides 2 extra cells used to summarise empty rows. This is just to
+        # save some memory so you don't end up allocating the 'empty' token many times.
         for d in range(max_d):
             num_nodes = self.lib.NumBinNodes(d)
             if num_nodes == 0:
@@ -174,9 +191,11 @@ class _tree_lib(object):
                     feat = torch.zeros(num_nodes + 2, self.embed_dim)
                     dev = 0
                 else:
-                    feat = torch.cuda.FloatTensor(num_nodes + 2, self.embed_dim).fill_(0)
+                    pos_feat = torch.cuda.FloatTensor(num_nodes + 2, self.embed_dim).fill_(-5.0)
+                    neg_feat = torch.cuda.FloatTensor(num_nodes + 2, self.embed_dim).fill_(5.0)
                     dev = 1
-                self.lib.SetBinaryFeat(d, ctypes.c_void_p(feat.data_ptr()), dev)
+                self.lib.SetBinaryFeat(d, ctypes.c_void_p(pos_feat.data_ptr()), ctypes.c_void_p(neg_feat.data_ptr()), dev)
+                feat = pos_feat - neg_feat
                 all_bin_feats.append(feat)
         return all_bin_feats, (base_feat, base_feat)
 
@@ -240,6 +259,29 @@ class _tree_lib(object):
         np_pos = np.empty((np.sum(self.list_nnodes),), dtype=np.int32)
         self.lib.GetCurPos(ctypes.c_void_p(np_pos.ctypes.data))
         return init_ids, all_ids, last_ids, next_ids, torch.tensor(np_pos, dtype=torch.float32).to(self.device)
+
+    # TODO: rename this to HasLeafMask
+    def GetLeafMask(self, lr, depth):
+        if lr == 0:
+            n = np.sum(self.list_nnodes)
+        else:
+            # TODO: use the leaf size for clarity, even though they will be the same.
+            n = self.lib.NumInternalNodes(depth)
+        if n == 0:
+            return None
+        has_leaf = np.empty((n,), dtype=np.int32)
+        self.lib.GetLeafMask(lr, depth, ctypes.c_void_p(has_leaf.ctypes.data))
+        return has_leaf.astype(np.bool)
+
+    def GetLeafLabels(self, lr, depth, dtype=None):
+        n = self.lib.NumLeaves(lr, depth)
+        if n == 0:
+            return None
+        labels = np.empty((n,), dtype=np.int32)
+        self.lib.GetLeafLabels(lr, depth, ctypes.c_void_p(labels.ctypes.data))
+        if dtype is not None:
+            labels = labels.astype(dtype)
+        return labels
 
     def GetChLabel(self, lr, depth=-1, dtype=None):
         if lr == 0:  # == root

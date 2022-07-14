@@ -42,6 +42,7 @@ def make_ba_plots(sampled_ts, test_ts, model_name, save_dir):
 def make_three_comm_plots(sampled_ts, test_ts, model_name, save_dir):
     c_sizes = [int(test_ts[0][0].number_of_nodes() / 3)] * 3
     comms = np.cumsum(c_sizes)
+    print(comms)
     fig, axs = plt.subplots(1, 3, figsize=(10, 3), sharey=True)
     plt.tight_layout()
     plot_community_eval(sampled_ts, test_ts, range(comms[1], comms[2]), axs[0], 'Third (Decaying)', model_name)

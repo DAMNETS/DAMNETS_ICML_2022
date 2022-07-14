@@ -82,7 +82,7 @@ int num_ones(int n)
 }
 
 GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges,
-                         void* _edge_pairs, int n_left, int n_right)
+                         void* _edge_pairs, void* _edge_signs, int n_left, int n_right)
 {
     this->num_nodes = num_nodes;
     this->num_edges = num_edges;
@@ -95,10 +95,13 @@ GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges,
     if (_edge_pairs == nullptr)
         return;
     int* edge_pairs = static_cast<int*>(_edge_pairs);
+    int* edge_signs = static_cast<int*>(_edge_signs);
     for (int i = 0; i < num_edges; ++i)
     {
         int x = edge_pairs[i * 2];
         int y = edge_pairs[i * 2 + 1];
+        int weight = edge_signs[i];
+        assert(weight != 0);
         if (n_left < 0 || n_right < 0)
         {
             if (x < y)
@@ -115,79 +118,83 @@ GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges,
             assert(y >= 0 && y < n_right);
         }
         if (!edge_list.count(x))
-            edge_list[x] = std::vector<int>();
-        edge_list[x].push_back(y);
+            edge_list[x] = std::vector<std::pair<int, int> >();
+        edge_list[x].push_back(std::make_pair(y, weight));
     }
 
     for (auto it = edge_list.begin(); it != edge_list.end(); ++it)
-        std::sort(it->second.begin(), it->second.end());
+        std::sort(it->second.begin(), it->second.end(),
+        [](const std::pair<int, int> &left, const std::pair<int, int> &right) {
+            return left.first < right.first;
+        });
 }
 
 
 GraphStruct* GraphStruct::permute()
 {
-    if (!cfg::bfs_permute)
-        return this;
-    if ((int)idx_map.size() != num_nodes)
-    {
-        idx_map.resize(num_nodes);
-    }
-    for (int i = 0; i < num_nodes; ++i)
-        idx_map[i] = i;
-    std::random_shuffle(idx_map.begin(), idx_map.end());
-    std::unordered_set<int> h;
-    std::queue<int> q;
-
-    GraphStruct* g = new GraphStruct(graph_id, num_nodes, num_edges);
-    g->idx_map.resize(num_nodes);
-
-    int t = 0;
-    for (int i = 0; i < num_nodes; ++i)
-    {
-        int src = idx_map[i];
-        if (h.count(src))
-            continue;
-        q.push(src);
-        h.insert(src);
-
-        while (!q.empty())
-        {
-            int cur_node = q.front();
-            q.pop();
-            g->idx_map[t++] = cur_node;
-
-            for (auto y : edge_list[cur_node])
-            {
-                y = idx_map[y];
-                if (h.count(y))
-                    continue;
-                h.insert(y);
-                q.push(y);
-            }
-        }
-    }
-    assert(t == num_nodes);
-    for (int i = 0; i < num_nodes; ++i)
-        idx_map[g->idx_map[i]] = i;
-
-    for (int i = 0; i < num_nodes; ++i)
-    {
-        for (auto y : edge_list[i])
-        {
-            y = idx_map[y];
-            int x = idx_map[i];
-            if (x < y)
-            {
-                int t = x; x = y; y = t;
-            }
-            if (!g->edge_list.count(x))
-                g->edge_list[x] = std::vector<int>();
-            g->edge_list[x].push_back(y);
-        }
-    }
-    for (auto it = g->edge_list.begin(); it != g->edge_list.end(); ++it)
-        std::sort(it->second.begin(), it->second.end());
-    return g;
+    return this;
+//    if (!cfg::bfs_permute)
+//        return this;
+//    if ((int)idx_map.size() != num_nodes)
+//    {
+//        idx_map.resize(num_nodes);
+//    }
+//    for (int i = 0; i < num_nodes; ++i)
+//        idx_map[i] = i;
+//    std::random_shuffle(idx_map.begin(), idx_map.end());
+//    std::unordered_set<int> h;
+//    std::queue<int> q;
+//
+//    GraphStruct* g = new GraphStruct(graph_id, num_nodes, num_edges);
+//    g->idx_map.resize(num_nodes);
+//
+//    int t = 0;
+//    for (int i = 0; i < num_nodes; ++i)
+//    {
+//        int src = idx_map[i];
+//        if (h.count(src))
+//            continue;
+//        q.push(src);
+//        h.insert(src);
+//
+//        while (!q.empty())
+//        {
+//            int cur_node = q.front();
+//            q.pop();
+//            g->idx_map[t++] = cur_node;
+//
+//            for (auto y : edge_list[cur_node])
+//            {
+//                y = idx_map[y];
+//                if (h.count(y))
+//                    continue;
+//                h.insert(y);
+//                q.push(y);
+//            }
+//        }
+//    }
+//    assert(t == num_nodes);
+//    for (int i = 0; i < num_nodes; ++i)
+//        idx_map[g->idx_map[i]] = i;
+//
+//    for (int i = 0; i < num_nodes; ++i)
+//    {
+//        for (auto y : edge_list[i])
+//        {
+//            y = idx_map[y];
+//            int x = idx_map[i];
+//            if (x < y)
+//            {
+//                int t = x; x = y; y = t;
+//            }
+//            if (!g->edge_list.count(x))
+//                g->edge_list[x] = std::vector<int>();
+//            g->edge_list[x].push_back(y);
+//        }
+//    }
+//    for (auto it = g->edge_list.begin(); it != g->edge_list.end(); ++it)
+//        std::sort(it->second.begin(), it->second.end());
+//    return g;
 }
 
 
@@ -208,39 +215,42 @@ void GraphStruct::realize_nodes(int node_start, int node_end, int col_start,
 }
 
 
-ColAutomata::ColAutomata(std::vector<int>& _indices)
+ColAutomata::ColAutomata(std::vector<std::pair<int, int> >& _indices)
 {
     this->indices = _indices.data();
     this->pos = 0;
     this->num_indices = (int)_indices.size();
 }
 
-void ColAutomata::add_edge(int col_idx)
+int ColAutomata::add_edge(int col_idx)
 {
     assert(this->pos < this->num_indices);
-    assert(this->indices[this->pos] == col_idx);
+    assert(this->indices[this->pos].first == col_idx);
+    int weight = this->indices[this->pos].second;
+    assert(weight != 0);
     this->pos += 1;
+    return weight;
 }
 
 int ColAutomata::next_edge()
 {
     if (this->pos < this->num_indices)
-        return this->indices[this->pos];
+        return this->indices[this->pos].first;
     return -1;
 }
 
 int ColAutomata::last_edge()
 {
-    return this->indices[this->num_indices - 1];
+    return this->indices[this->num_indices - 1].first;
 }
 
 bool ColAutomata::has_edge(int range_start, int range_end)
 {
     for (int i = pos; i < this->num_indices; ++i)
     {
-        if (this->indices[i] >= range_start && this->indices[i] < range_end)
+        if (this->indices[i].first >= range_start && this->indices[i].first < range_end)
             return true;
-        if (this->indices[i] >= range_end)
+        if (this->indices[i].first >= range_end)
             break;
     }
     return false;
@@ -291,6 +301,13 @@ void JobCollect::reset()
     num_left.clear();
     num_right.clear();
     is_internal.clear();
+    leaf_weights.clear();
+    has_left_leaf.clear();
+    has_right_leaf.clear();
+    left_leaf_weights.clear();
+    right_leaf_weights.clear();
+    root_weights.clear();
+    is_root_leaf.clear();
     bot_left_froms.clear();
     bot_left_tos.clear();
     next_left_froms.clear();
@@ -344,10 +361,21 @@ int JobCollect::add_job(AdjNode* node)
                 prev_tos[i][cur_depth].push_back(job_pos);
             } else {
                 int bid;
-                if (ch->is_leaf || !ch->has_edge)
-                    bid = ch->has_edge ? 1 : 0;
-                else
+                // Below checks if it is a leaf node or if it is just the end of this tree.
+                if (ch->is_leaf || !ch->has_edge) {
+                    if (!ch->has_edge)
+                        bid = 0;
+                    else {
+                        assert(ch->weight != 0);
+                        bid = (ch->weight > 0) ? 1 : 2;
+                    }
+
+                }
+//                    bid = ch->has_edge ? 1 : 0;
+                else {// not a leaf, has an edge, low_level
                     bid = 2 + job_position[ch->job_idx];
+                    std::cout << "2+ triggered in add job" << std::endl;
+                }
                 bot_froms[i][cur_depth].push_back(bid);
                 bot_tos[i][cur_depth].push_back(job_pos);
             }
@@ -411,8 +439,22 @@ void JobCollect::build_row_indices()
                     row_top_tos[k][0].push_back(j + offset);
                 } else {
                     int bid = root->has_edge ? 1 : 0;
-                    if (root->has_edge && !root->is_leaf)
+//                    int bid;
+                    if (root->has_edge && !root->is_leaf) {
+                        std::cout << "2+ triggered in build_row" << std::endl;
                         bid = 2 + job_position[root->job_idx];
+                    }
+                    // Below checks if it is a leaf node or if it is just the end of this tree.
+                    if (root->is_leaf || !root->has_edge) {
+                        if (!root->has_edge)
+                            bid = 0;
+                        else {
+                            assert(root->weight != 0);
+                            bid = (root->weight > 0) ? 1 : 2;
+                        }
+
+                    }
+//                    std::cout << "ROOT IS 0" << std::endl;
                     row_bot_froms[k].push_back(bid);
                     row_bot_tos[k].push_back(j + offset);
                 }
@@ -494,7 +536,7 @@ void JobCollect::build_row_summary()
 
     bool has_job = true;
     int layer = 0;
-    int global_offset = 3;
+    int global_offset = 4;
     if (cfg::bits_compress && n_bin_job_per_level.size())
         global_offset += n_bin_job_per_level[0];
     int past_start_offset = global_offset;
@@ -519,7 +561,11 @@ void JobCollect::build_row_summary()
                         tree_idx_map[i][layer * num_rows + j + cur_bit] = cnt + global_offset;  // NOLINT
                         cnt += 1;
                     } else {
+                        // TODO: edge sign.
                         int bid = root->has_edge ? 2 : 1;
+                        if (root->is_leaf && root->has_edge) {
+                            bid = (root->weight) > 0 ? 2: 3;
+                        }
                         if (root->has_edge && !root->is_leaf)
                             bid = 3 + job_position[root->job_idx];
                         tree_idx_map[i][layer * num_rows + j + cur_bit] = bid;

@@ -16,8 +16,8 @@ def generate_3_comm_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0.2, 
                     - set(nx.non_edges(g.subgraph(list(non_decay_nodes)))) \
                     - set(nx.non_edges(g.subgraph(list(decay_nodes))))
         non_edges = list(non_edges)
-        decay_n = int(np.ceil(decay_prop * len(non_edges)))
-        if len(non_edges) == 0 or len(decay_edges) == 0:
+        decay_n = int(np.floor(decay_prop * len(decay_edges)))
+        if decay_n == 0:
             break
         else:
             remove_edges = np.random.choice(len(decay_edges), size=decay_n, replace=False)
@@ -28,7 +28,7 @@ def generate_3_comm_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0.2, 
             for ix in add_edges:
                 edge = non_edges[ix]
                 g.add_edge(edge[0], edge[1])
-            ts.append(nx.graph(g))
+            ts.append(nx.Graph(g))
     return ts
 
 def generate_comm_total_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0.2, **kwargs):
@@ -39,14 +39,12 @@ def generate_comm_total_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0
     ts = [nx.Graph(g)]
     for t in range(T):
         decay_edges = [e for comm in community_nodes for e in g.subgraph(comm).edges()]
-        # get the non-edges intra-community (remove inter community non-edges)
+        # inter_community non-edges (don't want to add any of these)
         inter_non_edges = {e for c in community_nodes for e in nx.non_edges(g.subgraph(c))}
         non_edges = set(nx.non_edges(g)) - inter_non_edges
-                    # - set(nx.non_edges(g.subgraph(list(non_decay_nodes)))) \
-                    # - set(nx.non_edges(g.subgraph(list(decay_nodes))))
         non_edges = list(non_edges)
-        decay_n = int(np.ceil(decay_prop * len(decay_edges)))
-        if len(non_edges) == 0 or len(decay_edges) == 0:
+        decay_n = int(np.floor(decay_prop * len(decay_edges)))
+        if decay_n == 0:
             break
         else:
             remove_edges = np.random.choice(len(decay_edges), size=decay_n, replace=False)
@@ -61,4 +59,4 @@ def generate_comm_total_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0
     return ts
 
 if __name__ == '__main__':
-    ts = generate_comm_total_decay_ts([10, 10, 10], 10, 0.9, 0.01, 0.1)
+    ts = generate_comm_total_decay_ts([10, 10, 10], 10, 0.9, 0.0, 0.9)

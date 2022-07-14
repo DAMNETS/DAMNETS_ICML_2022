@@ -35,47 +35,57 @@ int NumBinNodes(int depth)
     return job_collect.n_bin_job_per_level[depth];
 }
 
-int SetBinaryFeat(int d, void* _feat_ptr, int dev)
+int SetBinaryFeat(int d, void* _pos_feat_ptr, void* _neg_feat_ptr, int dev)
 {
     int num_jobs = job_collect.n_bin_job_per_level[d];
-    float* feat_ptr = static_cast<float*>(_feat_ptr);
+    float* pos_feat_ptr = static_cast<float*>(_pos_feat_ptr);
+    float* neg_feat_ptr = static_cast<float*>(_neg_feat_ptr);
     if (dev == 0)  // cpu
     {
-        #pragma omp parallel for
-        for (int i = 0; i < num_jobs + 2; ++i)
-        {
-            float* cur_ptr = feat_ptr + i * cfg::dim_embed;
-            if (i < 2) {
-                cur_ptr[0] = i ? 1 : -1;
-            } else {
-                auto* node = job_collect.binary_feat_nodes[d][i - 2];
-                for (int j = 0; j < node->n_cols; ++j)
-                    cur_ptr[j] = node->bits_rep.get(j) ? 1 : -1;
-            }
-        }
+//        #pragma omp parallel for
+//        for (int i = 0; i < num_jobs + 2; ++i)
+//        {
+//            float* cur_ptr = feat_ptr + i * cfg::dim_embed;
+//            if (i < 2) {
+//                cur_ptr[0] = i ? 1 : -1;
+//            } else {
+//                auto* node = job_collect.binary_feat_nodes[d][i - 2];
+//                for (int j = 0; j < node->n_cols; ++j)
+//                    cur_ptr[j] = node->bits_rep.get(j) ? 1 : -1;
+//            }
+//        }
     } else {
         int* lens = new int[num_jobs + 2];
         lens[0] = lens[1] = 1;
+        // Number of ints to represent cfg::bits_compress worth of bits.
         uint32_t n_ints = cfg::bits_compress / ibits;
         if (cfg::bits_compress % ibits)
             n_ints++;
-        uint32_t* bits = new uint32_t[(num_jobs + 2) * n_ints];
-        bits[0] = 0;
-        bits[n_ints] = 1;
+        uint32_t* bits_pos = new uint32_t[(num_jobs + 2) * n_ints];
+        uint32_t* bits_neg = new uint32_t[(num_jobs + 2) * n_ints];
+
+        bits_pos[0] = bits_neg[0] = 0;
+        bits_pos[n_ints] = bits_neg[n_ints] = 1;
         #pragma omp parallel for
         for (int i = 2; i < num_jobs + 2; ++i)
         {
             auto* node = job_collect.binary_feat_nodes[d][i - 2];
             lens[i] = node->n_cols;
-            uint32_t* cur_bits = bits + i * n_ints;
-            assert(node->bits_rep.n_macros <= n_ints);
-            for (uint32_t j = 0; j < node->bits_rep.n_macros; ++j)
-                cur_bits[j] = node->bits_rep.macro_bits[j];
+            uint32_t* cur_bits_pos = bits_pos + i * n_ints;
+            uint32_t* cur_bits_neg = bits_neg + i * n_ints;
+            assert(node->bits_rep_pos.n_macros <= n_ints);
+            assert(node->bits_rep_neg.n_macros <= n_ints);
+            for (uint32_t j = 0; j < node->bits_rep_pos.n_macros; ++j)
+                cur_bits_pos[j] = node->bits_rep_pos.macro_bits[j];
+            for (uint32_t j = 0; j < node->bits_rep_pos.n_macros; ++j)
+                cur_bits_neg[j] = node->bits_rep_neg.macro_bits[j];
         }
 #ifdef USE_GPU
-        build_binary_mat(num_jobs + 2, n_ints, cfg::dim_embed, lens, bits, feat_ptr);  // NOLINT
+        build_binary_mat(num_jobs + 2, n_ints, cfg::dim_embed, lens, bits_pos, pos_feat_ptr);  // NOLINT
+        build_binary_mat(num_jobs + 2, n_ints, cfg::dim_embed, lens, bits_neg, neg_feat_ptr);
 #endif
-        delete[] bits;
+        delete[] bits_pos;
+        delete[] bits_neg;
         delete[] lens;
     }
     return 0;
@@ -176,9 +186,55 @@ int NumInternalNodes(int depth)
     return (int)job_collect.has_left[depth].size();
 }
 
+int NumLeaves(int lr, int depth)
+{
+    if (lr == 0)
+        return (int)job_collect.root_weights.size();
+    if (lr < 0 && depth >= (int)job_collect.left_leaf_weights.size())
+        return 0;
+    else if (lr > 1 && depth >= (int)job_collect.right_leaf_weights.size())
+        return 0;
+    return (lr < 0) ? (int)job_collect.left_leaf_weights[depth].size() : (int)job_collect.right_leaf_weights[depth].size();
+}
+
 int NumLeftBot(int depth)
 {
     return (int)job_collect.bot_left_froms[depth].size();
+}
+
+int GetLeafMask(int lr, int depth, void* _leaf_mask)
+{
+    int* leaf_mask = static_cast<int*>(_leaf_mask);
+    const int* ptr;
+    size_t n;
+    if (lr == 0) {
+        ptr = job_collect.is_root_leaf.data();
+        n = job_collect.is_root_leaf.size();
+    }
+    else {
+        ptr = lr < 0 ? job_collect.has_left_leaf[depth].data()
+            : job_collect.has_right_leaf[depth].data();
+        n = lr < 0 ? job_collect.has_left_leaf[depth].size(): job_collect.has_right_leaf[depth].size();
+    }
+    std::memcpy(leaf_mask, ptr, n * sizeof(int));
+    return 0;
+}
+
+int GetLeafLabels(int lr, int depth, void* _labels)
+{
+    int* labels = static_cast<int*>(_labels);
+    size_t n;
+    const int* ptr;
+    if (lr == 0) {
+        n = job_collect.root_weights.size();
+        ptr = job_collect.root_weights.data();
+    }
+    else {
+        ptr = lr < 0 ? job_collect.left_leaf_weights[depth].data() : job_collect.right_leaf_weights[depth].data();
+        n = lr < 0 ? job_collect.left_leaf_weights[depth].size() : job_collect.right_leaf_weights[depth].size();
+    }
+    std::memcpy(labels, ptr, n * sizeof(int));
+    return 0;
 }
 
 int GetChMask(int lr, int depth, void* _ch_mask)
@@ -382,11 +438,10 @@ int PrepareTrain(int num_graphs, void* _list_ids, void* _list_start_node,
     return 0;
 }
 
-int AddGraph(int graph_id, int num_nodes, int num_edges,
-             void* edge_pairs, int n_left, int n_right)
+int AddGraph(int graph_id, int num_nodes, int num_edges, void* edge_pairs, void* edge_signs, int n_left, int n_right)
 {
     auto* g = new GraphStruct(graph_id, num_nodes, num_edges,
-                              edge_pairs, n_left, n_right);
+                              edge_pairs, edge_signs, n_left, n_right);
     assert(graph_id == (int)graph_list.size());
     graph_list.push_back(g);
     return 0;

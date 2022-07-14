@@ -25,6 +25,10 @@ class GNNValidator:
             self.val_args.es_patience * self.val_args.val_epochs
         self.writer = writer
         self.num_nodes = self.args.model.bigg.max_num_nodes
+        self.es_buffer = self.val_args.es_buffer
+
+    def update_buffer(self, epoch):
+        self.es_buffer = max(epoch, self.es_buffer)
 
     def validate(self, epoch):
         loss = self.compute_val_loss()
@@ -48,10 +52,9 @@ class GNNValidator:
         with torch.no_grad():
             loss = 0
             for batch in self.val_loader:
-                pos_ids = batch.pos_id
-                neg_ids = batch.neg_id
+                graph_ids = batch.graph_id
                 batch.to(self.exp_args.device)
-                loss_ = self.model.forward_train(batch, pos_ids, neg_ids, self.num_nodes)
+                loss_ = self.model.forward_train(batch.x, batch.edge_index, graph_ids, self.num_nodes)
                 # ll, _ = self.model.forward_train(graph_ids, batch, self.num_nodes)
-                loss += loss_.item()
+                loss += loss_.item() / len(graph_ids)
         return loss / len(self.val_loader)

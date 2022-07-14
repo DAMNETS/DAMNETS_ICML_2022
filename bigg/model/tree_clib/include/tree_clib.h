@@ -24,7 +24,15 @@ extern "C" int PrepareTrain(int num_graphs, void* list_ids,
                             void* list_col_end, int num_nodes, int new_batch);
 
 extern "C" int AddGraph(int graph_idx, int num_nodes, int num_edges,
-                        void* edge_pairs, int n_left, int n_right);
+                        void* edge_pairs, void* edge_signs, int n_left, int n_right);
+
+extern "C" int NumLeafNodes(int depth);
+
+extern "C" int GetLeafLabels(int lr, int depth, void* _labels);
+
+extern "C" int GetLeafMask(int lr, int depth, void* _leaf_mask);
+
+extern "C" int NumLeaves(int lr, int depth);
 
 extern "C" int TotalTreeNodes();
 
@@ -86,7 +94,7 @@ extern "C" int MaxBinFeatDepth();
 
 extern "C" int NumBinNodes(int depth);
 
-extern "C" int SetBinaryFeat(int d, void* _feat_ptr, int dev);
+extern "C" int SetBinaryFeat(int d, void* _pos_feat_ptr, void* _neg_feat_ptr, int dev);
 
 extern "C" int GetNextStates(void* _state_idx);
 

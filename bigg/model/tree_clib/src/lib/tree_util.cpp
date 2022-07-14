@@ -36,23 +36,37 @@ void AdjNode::init(AdjNode* parent, int row, int col_begin, int col_end,
     this->is_lowlevel = this->n_cols <= cfg::bits_compress;
     this->is_leaf = (this->n_cols <= 1);
     this->is_root = (this->parent == nullptr);
-    if (is_lowlevel)
-        this->bits_rep = BitSet(cfg::bits_compress);
+    if (is_lowlevel) {
+         this->bits_rep_pos = BitSet(cfg::bits_compress);
+         this->bits_rep_neg = BitSet(cfg::bits_compress);
+    }
     this->has_edge = false;
     this->job_idx = -1;
+    this->weight = 0;
 }
 
-void AdjNode::update_bits()
+void AdjNode::update_bits(int weight = 0)
 {
     if (!is_lowlevel)
         return;
     if (is_leaf)
     {
         if (has_edge)
-            bits_rep.set(0);
+        {
+            assert(weight != 0);
+            if (weight > 0) {
+                bits_rep_pos.set(0);
+            }
+            else {
+                bits_rep_neg.set(0);
+            }
+        }
+
     } else {
-        bits_rep = lch->bits_rep.left_shift(rch->n_cols);
-        bits_rep = bits_rep.or_op(rch->bits_rep);
+        bits_rep_pos = lch->bits_rep_pos.left_shift(rch->n_cols);
+        bits_rep_pos = bits_rep_pos.or_op(rch->bits_rep_pos);
+        bits_rep_neg = lch->bits_rep_neg.left_shift(rch->n_cols);
+        bits_rep_neg = bits_rep_neg.or_op(rch->bits_rep_neg);
     }
 }
 
@@ -93,9 +107,9 @@ void AdjRow::init(int row, int col_start, int col_end)
 }
 
 
-void AdjRow::insert_edges(std::vector<int>& col_indices)
+void AdjRow::insert_edges(std::vector<std::pair<int, int> >& edge_list)
 {
-    auto* col_sm = new ColAutomata(col_indices);
+    auto* col_sm = new ColAutomata(edge_list);
     this->add_edges(this->root, col_sm);
     delete col_sm;
 }
@@ -106,6 +120,8 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
     {
         node->has_edge = col_sm->num_indices > 0;
         job_collect.has_ch.push_back(node->has_edge);
+        int is_root_leaf = node->is_leaf && node->has_edge;
+        job_collect.is_root_leaf.push_back(is_root_leaf);
     } else {
         node->has_edge = true;
     }
@@ -114,8 +130,15 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
     job_collect.append_bool(job_collect.is_internal, node->depth,
                             !(node->is_leaf));
     if (node->is_leaf) {
-        col_sm->add_edge(node->col_begin);
-        node->update_bits();
+        int weight = col_sm->add_edge(node->col_begin);
+        assert(weight != 0);
+        node->update_bits(weight);
+        node->weight = weight;
+        if (node->is_root) { // Still want to make sign predictions for roots that happen to be leaves.
+           assert(node->has_edge);
+           job_collect.root_weights.push_back(weight);
+        }
+//        job_collect.append_bool(job_collect.leaf_weights, node->depth, weight);
     } else {
         node->split();
         bool has_left = (col_sm->next_edge() < node->mid);
@@ -124,6 +147,11 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
         job_collect.append_bool(job_collect.has_left, node->depth, has_left);
         job_collect.append_bool(job_collect.num_left, node->depth,
                                 node->lch->n_cols);
+        bool has_left_leaf = node->lch->weight != 0;
+        job_collect.append_bool(job_collect.has_left_leaf, node->depth, has_left_leaf);
+        if (has_left_leaf)
+            job_collect.append_bool(job_collect.left_leaf_weights, node->depth, node->lch->weight);
+
         bool has_right = has_left ?
             col_sm->has_edge(node->mid, node->col_end) : true;
         if (has_right)
@@ -131,6 +159,10 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
         job_collect.append_bool(job_collect.has_right, node->depth, has_right);
         job_collect.append_bool(job_collect.num_right, node->depth,
                                 node->rch->n_cols);
+        bool has_right_leaf = node->rch->weight != 0;
+        job_collect.append_bool(job_collect.has_right_leaf, node->depth, has_right_leaf);
+        if (has_right_leaf)
+            job_collect.append_bool(job_collect.right_leaf_weights, node->depth, node->rch->weight);
         node->update_bits();
         node->job_idx = job_collect.add_job(node);
 
@@ -144,9 +176,21 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
             job_collect.append_bool(job_collect.next_left_tos, node->depth,
                                     cur_idx);
         } else {
-            int bid = ch->has_edge ? 1 : 0;
-            if (ch->has_edge && !ch->is_leaf)
+            int bid = -1;
+            if (ch->has_edge && !ch->is_leaf) {
                 bid = 2 + job_collect.job_position[ch->job_idx];
+                std::cout << "2+ triggered in add edges" << std::endl;
+            }
+
+            else if (ch->is_leaf && ch->has_edge) {
+                assert(ch->weight != 0);
+                bid = (ch->weight > 0) ? 1 : 2;
+            }
+            else {
+                assert(ch->weight == 0);
+                bid = 0;
+            }
+            assert(bid != -1);
             job_collect.append_bool(job_collect.bot_left_froms, node->depth,
                                     bid);
             job_collect.append_bool(job_collect.bot_left_tos, node->depth,

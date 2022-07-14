@@ -47,12 +47,15 @@ class GraphStruct
 {
  public:
     GraphStruct(int graph_id, int num_nodes, int num_edges,
-                void* _edge_pairs = nullptr, int n_left = -1, int n_right = -1);
+                void* _edge_pairs = nullptr,
+                void* _edge_signs = nullptr,
+                int n_left = -1,
+                int n_right = -1);
 
     void realize_nodes(int node_start, int node_end,
                        int col_start, int col_end);
     GraphStruct* permute();
-    std::map<int, std::vector<int> > edge_list;
+    std::map<int, std::vector<std::pair<int, int> > > edge_list;
     std::vector<AdjRow*> active_rows;
     std::vector<int> idx_map;
     int num_nodes, num_edges, graph_id;
@@ -76,8 +79,13 @@ class JobCollect
     std::vector<AdjNode*> global_job_nodes;
     std::vector<int> job_position;
     std::vector<int> has_ch;
+    std::vector<int> root_weights;
+    std::vector<int> is_root_leaf;
     std::vector< std::vector<int> > has_left, has_right, num_left, num_right;
     std::vector< std::vector<int> > is_internal;
+    std::vector< std::vector<int> > leaf_weights;
+    std::vector< std::vector<int> > has_left_leaf, has_right_leaf;
+    std::vector< std::vector<int> > left_leaf_weights, right_leaf_weights;
     std::vector<int> n_cell_job_per_level, n_bin_job_per_level;
     std::vector< std::vector<int> > bot_froms[2], bot_tos[2], prev_froms[2], prev_tos[2]; // NOLINT
     std::vector< std::vector<AdjNode*> > binary_feat_nodes;
@@ -97,14 +105,14 @@ extern JobCollect job_collect;
 class ColAutomata
 {
  public:
-    ColAutomata(std::vector<int>& indices);
+    ColAutomata(std::vector< std::pair<int, int> >& indices);
 
-    void add_edge(int col_idx);
+    int add_edge(int col_idx);
     int next_edge();
     int last_edge();
     bool has_edge(int range_start, int range_end);
 
-    int* indices;
+    std::pair<int, int> * indices;
     int pos, num_indices;
 };
 

@@ -19,7 +19,7 @@ __global__ void binary_build_kernel(int n_ints, int n_feats, int* lens,
         int slot = i / 32;
         uint32_t pos = i % 32;
         uint32_t bit = cur_bits[slot] & ((uint32_t)1 << pos);
-        feat_ptr[i] = bit ? 1 : -1;
+        feat_ptr[i] = bit ? 1 : 0;
     }
 }
 

@@ -59,7 +59,7 @@ def tree_state_select(h_bot, c_bot, h_buf, c_buf, fn_all_ids):
 def batch_tree_lstm2(h_bot, c_bot, h_buf, c_buf, fn_all_ids, cell):
     h_list = []
     c_list = []
-    for i in range(2):
+    for i in range(2): # Get left and right.
         h_vecs, c_vecs = tree_state_select(h_bot, c_bot, h_buf, c_buf, lambda : fn_all_ids(i))
         h_list.append(h_vecs)
         c_list.append(c_vecs)
@@ -67,6 +67,7 @@ def batch_tree_lstm2(h_bot, c_bot, h_buf, c_buf, fn_all_ids, cell):
 
 
 def batch_tree_lstm3(h_bot, c_bot, h_buf, c_buf, h_past, c_past, fn_all_ids, cell):
+    # Fenwick batching.
     if h_past is None:
         return batch_tree_lstm2(h_bot, c_bot, h_buf, c_buf, lambda i: fn_all_ids(i)[:-2], cell)
     elif h_bot is None:
@@ -90,15 +91,15 @@ def batch_tree_lstm3(h_bot, c_bot, h_buf, c_buf, h_past, c_past, fn_all_ids, cel
 class FenwickTree(nn.Module):
     def __init__(self, args):
         super(FenwickTree, self).__init__()
-
-        self.init_h0 = Parameter(torch.Tensor(1, args.embed_dim))
-        self.init_c0 = Parameter(torch.Tensor(1, args.embed_dim))
+        embed_dim = args.embed_dim
+        self.init_h0 = Parameter(torch.Tensor(1, embed_dim))
+        self.init_c0 = Parameter(torch.Tensor(1, embed_dim))
         glorot_uniform(self)
 
-        self.merge_cell = BinaryTreeLSTMCell(args.embed_dim)
-        self.summary_cell = BinaryTreeLSTMCell(args.embed_dim)
+        self.merge_cell = BinaryTreeLSTMCell(embed_dim)
+        self.summary_cell = BinaryTreeLSTMCell(embed_dim)
         if args.pos_enc:
-            self.pos_enc = PosEncoding(args.embed_dim, args.device, args.pos_base)
+            self.pos_enc = PosEncoding(embed_dim, args.device, args.pos_base)
         else:
             self.pos_enc = lambda x: 0
 
@@ -124,6 +125,7 @@ class FenwickTree(nn.Module):
         else:
             self.append_state(new_state, 0)
         pos = 0
+        # Compute the raw summaries needed.
         while pos < len(self.list_states):
             if len(self.list_states[pos]) >= 2:
                 lch_state, rch_state = self.list_states[pos]  # assert the length is 2
@@ -132,6 +134,7 @@ class FenwickTree(nn.Module):
                 self.append_state(new_state, pos + 1)
             pos += 1
         state = None
+        # Summarise all the raw states computed.
         for pos in range(len(self.list_states)):
             if len(self.list_states[pos]) == 0:
                 continue
@@ -145,6 +148,12 @@ class FenwickTree(nn.Module):
     def forward_train(self, h_bot, c_bot, h_buf0, c_buf0, prev_rowsum_h, prrev_rowsum_c):
         # embed row tree
         tree_agg_ids = TreeLib.PrepareRowEmbed()
+        # This prepares the ids from which choose the bottom up row aggregations to be
+        # merged into the fenwick tree. h_bot is the same as in the bottom up aggregation,
+        # and appears here to give the value for empty rows, as well as for the case where
+        # a root itself has a node TODO: check this last point.
+        # tree_agg_ids contains the locations to perform summary at
+        # each possible level of the Fenwick tree.
         row_embeds = [(self.init_h0, self.init_c0)]
         if h_bot is not None:
             row_embeds.append((h_bot, c_bot))
@@ -203,9 +212,12 @@ class BitsRepNet(nn.Module):
         self.device = args.device
 
     def forward(self, on_bits, n_cols):
-        h = torch.zeros(1, self.out_dim).to(self.device)
-        h[0, :n_cols] = -1.0
-        h[0, on_bits] = 1.0
+        h = torch.ones(1, self.out_dim).to(self.device) * -10
+        h[0, :n_cols] = 0
+        pos_bit_pos = [x for (x, sign) in on_bits if sign == 1]
+        neg_bit_pos = [x for (x, sign) in on_bits if sign == -1]
+        h[0, pos_bit_pos] = 1.0
+        h[0, neg_bit_pos] = -1.0
 
         return h, h
 
@@ -213,17 +225,18 @@ class BitsRepNet(nn.Module):
 class RecurTreeGen(nn.Module):
     def __init__(self, args):
         super(RecurTreeGen, self).__init__()
-        # args = model_args.bigg
-        # gnn_args = model_args.gnn
         self.directed = args.directed
         self.self_loop = args.self_loop
         self.bits_compress = args.bits_compress
         self.greedy_frac = args.greedy_frac
         self.share_param = args.share_param
         self.embed_dim = args.embed_dim
+        self.dropout = args.dropout
         if not self.bits_compress:
-            self.leaf_h0 = Parameter(torch.Tensor(1, args.embed_dim))
-            self.leaf_c0 = Parameter(torch.Tensor(1, args.embed_dim))
+            self.leaf_h0_pos = Parameter(torch.Tensor(1, args.embed_dim))
+            self.leaf_c0_pos = Parameter(torch.Tensor(1, args.embed_dim))
+            self.leaf_h0_neg = Parameter(torch.Tensor(1, args.embed_dim))
+            self.leaf_c0_neg = Parameter(torch.Tensor(1, args.embed_dim))
             self.empty_h0 = Parameter(torch.Tensor(1, args.embed_dim))
             self.empty_c0 = Parameter(torch.Tensor(1, args.embed_dim))
 
@@ -237,12 +250,13 @@ class RecurTreeGen(nn.Module):
         if self.share_param:
             self.m_l2r_cell = BinaryTreeLSTMCell(args.embed_dim)
             self.lr2p_cell = BinaryTreeLSTMCell(args.embed_dim)
-            self.pred_has_ch = MLP(args.embed_dim, [2 * args.embed_dim, 1])
-            self.m_pred_has_left = MLP(args.embed_dim, [2 * args.embed_dim, 1])
-            self.m_pred_has_right = MLP(args.embed_dim, [2 * args.embed_dim, 1])
+            self.pred_has_ch = MLP(args.embed_dim, [2 * args.embed_dim, 1], dropout=self.dropout)
+            self.m_pred_has_left = MLP(args.embed_dim, [2 * args.embed_dim, 1], dropout=self.dropout)
+            self.m_pred_has_right = MLP(args.embed_dim, [2 * args.embed_dim, 1], dropout=self.dropout)
             self.m_cell_topdown = nn.LSTMCell(args.embed_dim, args.embed_dim)
             self.m_cell_topright = nn.LSTMCell(args.embed_dim, args.embed_dim)
-            self.fuser = MLP(2 * args.embed_dim, [2 * args.embed_dim, args.embed_dim])
+            self.fuser = MLP(2 * args.embed_dim, [4 * args.embed_dim, args.embed_dim], dropout=self.dropout)
+            self.m_pred_sign = MLP(args.embed_dim, [2 * args.embed_dim, 1], dropout=self.dropout)
         else:
             fn_pred = lambda: MLP(args.embed_dim, [2 * args.embed_dim, 1])
             fn_tree_cell = lambda: BinaryTreeLSTMCell(args.embed_dim)
@@ -270,16 +284,13 @@ class RecurTreeGen(nn.Module):
         else:
             self.tree_pos_enc = lambda x: 0
 
-        # self.gnn = GAT(in_channels=args.max_num_nodes,
-        #                hidden_channels=args.embed_dim,
-        #                num_layers=gnn_args.num_layers,
-        #                dropout=gnn_args.dropout,
-        #                heads=gnn_args.heads,
-        #                )
+        self.label_smoothing = 0.0
         self.use_attn = args.use_attn
         if args.use_attn:
-            self.attn = nn.MultiheadAttention(args.embed_dim, num_heads=1, batch_first=True)
+            self.attn = nn.MultiheadAttention(args.embed_dim, num_heads=4, batch_first=True)
             self.prev_pos_enc = PosEncoding(args.embed_dim, args.device, args.pos_base, bias=np.pi / 4)
+        self.num_edges = 0
+        self.edges_by_level = {}
 
     def cell_topdown(self, x, y, lv):
         cell = self.m_cell_topdown if self.share_param else self.cell_topdown_modules[lv]
@@ -301,6 +312,9 @@ class RecurTreeGen(nn.Module):
         mlp = self.m_pred_has_right if self.share_param else self.has_right_modules[lv]
         return mlp(x)
 
+    def pred_sign(self, x):
+        return self.m_pred_sign(x)
+
     def get_empty_state(self):
         if self.bits_compress:
             return self.bit_rep_net([], 1)
@@ -313,7 +327,7 @@ class RecurTreeGen(nn.Module):
             p += self.greedy_frac
         return p
 
-    def gen_row(self, ll, state, tree_node, col_sm, lb, ub):
+    def gen_row(self, ll, state, tree_node, col_sm, lb, ub, side=None):
         assert lb <= ub
         if tree_node.is_root:
             prob_has_edge = torch.sigmoid(self.pred_has_ch(state[0]))
@@ -341,20 +355,35 @@ class RecurTreeGen(nn.Module):
             return ll, self.get_empty_state(), 0
 
         if tree_node.is_leaf:
-            tree_node.bits_rep = [0]
-            col_sm.add_edge(tree_node.col_range[0])
+            sign_prob = torch.sigmoid(self.pred_sign(state[0]))
+            if col_sm.supervised:
+                sign = col_sm.next_edge[1]
+            else:
+                sign = torch.bernoulli(sign_prob).item()
+                sign = -1 if int(sign) == 0 else 1
+            tree_node.bits_rep = [(0, sign)]
+            col_sm.add_edge(tree_node.col_range[0], sign)  # just incr position if supervised
+            if tree_node.is_root:
+                print('LEAF IS ROOT')
+            self.num_edges += 1
+            # print(f'Depth: {tree_node.depth} | Side: {side if side is not None else 0}'
+            #       f' Prob : {sign_prob.item()} | Sign: {sign}')
+            ll = ll + torch.log(sign_prob) if sign == 1 else ll + torch.log(1 - sign_prob)
             if self.bits_compress:
                 return ll, self.bit_rep_net(tree_node.bits_rep, tree_node.n_cols), 1
             else:
-                return ll, (self.leaf_h0, self.leaf_c0), 1
+                state = (self.leaf_h0_pos, self.leaf_c0_pos) if sign == 1 else (self.leaf_h0_neg, self.leaf_c0_neg)
+                return ll, state, 1
         else:
+            # if tree_node.depth == 4:
+            #     print('Here')
             tree_node.split()
 
             mid = (tree_node.col_range[0] + tree_node.col_range[1]) // 2
             left_prob = torch.sigmoid(self.pred_has_left(state[0], tree_node.depth))
 
             if col_sm.supervised:
-                has_left = col_sm.next_edge < mid
+                has_left = col_sm.next_edge[0] < mid
             else:
                 has_left = np.random.rand() < self.get_prob_fix(left_prob.item())
                 if ub == 0:
@@ -362,12 +391,13 @@ class RecurTreeGen(nn.Module):
                 if lb > tree_node.rch.n_cols:
                     has_left = True
             ll = ll + (torch.log(left_prob) if has_left else torch.log(1 - left_prob))
+            # Check for left leaf here. TODO: clean this up a bit.
             left_pos = self.tree_pos_enc([tree_node.lch.n_cols])
             state = self.cell_topdown(self.topdown_left_embed[[int(has_left)]] + left_pos, state, tree_node.depth)
             if has_left:
                 lub = min(tree_node.lch.n_cols, ub)
                 llb = max(0, lb - tree_node.rch.n_cols)
-                ll, left_state, num_left = self.gen_row(ll, state, tree_node.lch, col_sm, llb, lub)
+                ll, left_state, num_left = self.gen_row(ll, state, tree_node.lch, col_sm, llb, lub, 'left')
             else:
                 left_state = self.get_empty_state()
                 num_left = 0
@@ -376,7 +406,7 @@ class RecurTreeGen(nn.Module):
             topdown_state = self.l2r_cell(state, (left_state[0] + right_pos, left_state[1] + right_pos), tree_node.depth)
             rlb = max(0, lb - num_left)
             rub = min(tree_node.rch.n_cols, ub - num_left)
-            if not has_left:
+            if not has_left:  # Know it has edge, not in left => it's in right.
                 has_right = True
             else:
                 right_prob = torch.sigmoid(self.pred_has_right(topdown_state[0], tree_node.depth))
@@ -393,7 +423,7 @@ class RecurTreeGen(nn.Module):
             topdown_state = self.cell_topright(self.topdown_right_embed[[int(has_right)]], topdown_state, tree_node.depth)
 
             if has_right:  # has edge in right child
-                ll, right_state, num_right = self.gen_row(ll, topdown_state, tree_node.rch, col_sm, rlb, rub)
+                ll, right_state, num_right = self.gen_row(ll, topdown_state, tree_node.rch, col_sm, rlb, rub, 'right')
             else:
                 right_state = self.get_empty_state()
                 num_right = 0
@@ -405,27 +435,26 @@ class RecurTreeGen(nn.Module):
 
     def forward(self, node_end, gnn_embeds, edge_list=None, node_start=0, list_states=[], lb_list=None, ub_list=None, col_range=None, num_nodes=None, display=False):
         self.eval()
-        # gnn_embeds = self.gnn(node_feat, edges)
         pos = 0
         total_ll = 0.0
         edges = []
         self.row_tree.reset(list_states)
-        # Add 0 here
         controller_state = self.row_tree()
         if num_nodes is None:
             num_nodes = node_end
         pbar = range(node_start, node_end)
         if display:
             pbar = tqdm(pbar)
+        controller_states = []
         for i in pbar:
             if edge_list is None:
                 col_sm = ColAutomata(supervised=False)
             else:
                 indices = []
                 while pos < len(edge_list) and i == edge_list[pos][0]:
-                    indices.append(edge_list[pos][1])
+                    indices.append((edge_list[pos][1], edge_list[pos][2]))
                     pos += 1
-                indices.sort()
+                indices.sort(key = lambda x: x[0])
                 col_sm = ColAutomata(supervised=True, indices=indices)
 
             cur_row = AdjRow(i, self.directed, self.self_loop, col_range=col_range)
@@ -434,7 +463,6 @@ class RecurTreeGen(nn.Module):
             cur_pos_embed = self.row_tree.pos_enc([num_nodes - i])
             controller_state = [x + cur_pos_embed for x in controller_state]
 
-            # row_h = row_states[0].reshape(-1, n, self.embed_dim)
             if self.use_attn:
                 gnn_embeds = gnn_embeds + self.prev_pos_enc([i for i in range(node_end)])
                 fused, _ = self.attn(controller_state[0].unsqueeze(0),
@@ -444,18 +472,32 @@ class RecurTreeGen(nn.Module):
                 fused = fused.squeeze(0)
             else:
                 fused = self.fuser(torch.cat([controller_state[0], gnn_embeds[i:i+1]], dim=1))
-            controller_state = (fused + controller_state[0], controller_state[1])
+            controller_states.append(controller_state)
+            controller_state = (controller_state[0] + fused, controller_state[1])
+            # controller_state = (self.fuser(torch.cat([gnn_embeds[i:i+1], controller_state[0]], dim=1)),
+            #                     self.fuser(torch.cat([gnn_embeds[i:i+1], controller_state[1]], dim=1)))
             ll, cur_state, _ = self.gen_row(0, controller_state, cur_row.root, col_sm, lb, ub)
             assert lb <= len(col_sm.indices) <= ub
             controller_state = self.row_tree(cur_state)  # Autoregressive update across rows.
-            edges += [(i, x) for x in col_sm.indices]
+            # controller_states.append(cur_state)
+            edges += [(i, x, w) for x, w in col_sm.indices]
             total_ll = total_ll + ll
 
+        c0 = [s[0] for s in controller_states]
+        c0 = torch.concat(c0).detach().cpu().numpy()
+        # print(self.num_edges)
         return total_ll, edges, self.row_tree.list_states
+
+    def _smooth_labels(self, labels):
+        if self.label_smoothing == 0:
+            return labels
+        else:
+            return (1.0 - self.label_smoothing) * labels + (0.5 * self.label_smoothing)
 
     def binary_ll(self, pred_logits, np_label, need_label=False, reduction='sum'):
         pred_logits = pred_logits.view(-1, 1)
         label = torch.tensor(np_label, dtype=torch.float32).to(pred_logits.device).view(-1, 1)
+        # label = self._smooth_labels(label)
         loss = F.binary_cross_entropy_with_logits(pred_logits, label, reduction=reduction)
         if need_label:
             return -loss, label
@@ -467,8 +509,8 @@ class RecurTreeGen(nn.Module):
         all_ids = TreeLib.PrepareTreeEmbed()
 
         if not self.bits_compress:
-            h_bot = torch.cat([self.empty_h0, self.leaf_h0], dim=0)
-            c_bot = torch.cat([self.empty_c0, self.leaf_c0], dim=0)
+            h_bot = torch.cat([self.empty_h0, self.leaf_h0_pos, self.leaf_h0_neg], dim=0)
+            c_bot = torch.cat([self.empty_c0, self.leaf_c0_pos, self.leaf_c0_neg], dim=0)
             fn_hc_bot = lambda d: (h_bot, c_bot)
         else:
             binary_embeds, base_feat = TreeLib.PrepareBinary()
@@ -476,8 +518,13 @@ class RecurTreeGen(nn.Module):
         max_level = len(all_ids) - 1
         h_buf_list = [None] * (len(all_ids) + 1)
         c_buf_list = [None] * (len(all_ids) + 1)
-
-        for d in range(len(all_ids) - 1, -1, -1):
+        # All ids contains, for each level in the tree, the left and right states to select.
+        # These are split into two-types, which are referred to in code as 'bot' and 'prev'.
+        # Bot indicates the node is a leaf, in which case the value will be selected from h_bot from {0, 1, 2}
+        # representing the parameters for {0, 1, -1}. Prev represents an existing embedding in h_buf_list, which
+        # have been combined already by the TreeLSTM cells, so these prev indices start appearing above the lowest
+        # level of the tree.
+        for d in range(len(all_ids) - 1, -1, -1): # Work from bottom of tree up.
             fn_ids = lambda i: all_ids[d][i]
             if d == max_level:
                 h_buf = c_buf = None
@@ -495,16 +542,31 @@ class RecurTreeGen(nn.Module):
         row_states, next_states = self.row_tree.forward_train(*(fn_hc_bot(0)), h_buf_list[0], c_buf_list[0], *prev_rowsum_states)
         return row_states, next_states
 
+    def _predict_leaves(self, lr, lv, states):
+        leaf_ll = 0
+        has_leaf = TreeLib.GetLeafMask(lr, lv)
+        if has_leaf is not None and np.sum(has_leaf) > 0:
+            leaf_states = states[has_leaf]
+            leaf_logits = self.pred_sign(leaf_states)
+            leaf_labels = TreeLib.GetLeafLabels(lr, lv)
+            leaf_labels = (leaf_labels + 1) / 2  # re-label -1 to 1 for BCE-loss.
+            leaf_labels = self._smooth_labels(leaf_labels)
+            # print(f'-- Depth: {lv} | lr : {lr}  --')
+            # print(torch.sigmoid(leaf_logits).detach().cpu().numpy())
+            leaf_ll = self.binary_ll(leaf_logits, leaf_labels, reduction='sum')
+        return leaf_ll
+
     def forward_train(self, graph_ids, gnn_embeds, n,
                       list_node_starts=None,
                       num_nodes=-1, prev_rowsum_states=[None, None], list_col_ranges=None):
         fn_hc_bot, h_buf_list, c_buf_list = self.forward_row_trees(graph_ids, list_node_starts, num_nodes, list_col_ranges)
-        # row states are collapsed across the batch, so N * n * H - NOTE: Next states not used in this function -
+        # row states are collapsed across the batch, so (N * n) * H - NOTE: Next states not used in this function -
+        # tree_init = gnn_embeds.reshape(-1, n, self.embed_dim).sum()
         row_states, next_states = self.row_tree.forward_train(*(fn_hc_bot(0)), h_buf_list[0], c_buf_list[0], *prev_rowsum_states)
         # make prediction at root.
         if self.use_attn:  # attention weighted sum of gnn embeddings.
-            pe = self.prev_pos_enc([i for i in range(n)]).repeat(int(gnn_embeds.shape[0] / n), 1)
-            gnn_embeds = gnn_embeds + pe
+            # pe = self.prev_pos_enc([i for i in range(n)]).repeat(int(gnn_embeds.shape[0] / n), 1)
+            # gnn_embeds = gnn_embeds + pe
             gnn_embeds = gnn_embeds.reshape(-1, n, self.embed_dim)
             row_h = row_states[0].reshape(-1, n, self.embed_dim)
             fused, _ = self.attn(row_h, gnn_embeds, gnn_embeds)
@@ -513,9 +575,14 @@ class RecurTreeGen(nn.Module):
             # Combine GNN and row state information
             fused = self.fuser(torch.concat([row_states[0], gnn_embeds], dim=1))
         row_states = (row_states[0] + fused, row_states[1])
+        # row_states = (self.fuser(torch.concat([gnn_embeds, row_states[0]], dim=1)),
+        #                     self.fuser(torch.concat([gnn_embeds, row_states[1]], dim=1)))
         logit_has_edge = self.pred_has_ch(row_states[0])
         has_ch, _ = TreeLib.GetChLabel(0, dtype=np.bool) # Get correct labels
         ll = self.binary_ll(logit_has_edge, has_ch)
+        # TODO: leaf prediction.
+        root_leaf_ll = self._predict_leaves(0, 0, row_states[0])
+        ll = ll + root_leaf_ll
         # has_ch_idx
         cur_states = (row_states[0][has_ch], row_states[1][has_ch])
 
@@ -525,7 +592,7 @@ class RecurTreeGen(nn.Module):
             is_nonleaf = TreeLib.QueryNonLeaf(lv)
             if is_nonleaf is None or np.sum(is_nonleaf) == 0:
                 break
-            # LSTM hidden and cell states.
+            # Left has_ch prediction
             cur_states = (cur_states[0][is_nonleaf], cur_states[1][is_nonleaf])
             left_logits = self.pred_has_left(cur_states[0], lv)
             has_left, num_left = TreeLib.GetChLabel(-1, lv)
@@ -533,8 +600,13 @@ class RecurTreeGen(nn.Module):
             left_ll, float_has_left = self.binary_ll(left_logits, has_left, need_label=True, reduction='sum')
             ll = ll + left_ll
 
+
             cur_states = self.cell_topdown(left_update, cur_states, lv)
 
+            # Left leaf prediction.
+            left_leaf_ll = self._predict_leaves(-1, lv, cur_states[0])
+            ll = ll + left_leaf_ll
+            # Get the bottom up states for the left children of all nodes on this level
             left_ids = TreeLib.GetLeftRootStates(lv)
             h_bot, c_bot = fn_hc_bot(lv + 1)
             if lv + 1 < len(h_buf_list):
@@ -545,19 +617,27 @@ class RecurTreeGen(nn.Module):
                                                     h_next_buf, c_next_buf,
                                                     lambda: left_ids)
 
+            # Merge the bottom up states from the left children with the current topdown state
             has_right, num_right = TreeLib.GetChLabel(1, lv)
             right_pos = self.tree_pos_enc(num_right)
             left_subtree_states = [x + right_pos for x in left_subtree_states]
             topdown_state = self.l2r_cell(cur_states, left_subtree_states, lv)
 
+            # Use the merged topdown state to predict the right child.
             right_logits = self.pred_has_right(topdown_state[0], lv)
-            right_update = self.topdown_right_embed[has_right]
-            topdown_state = self.cell_topright(right_update, topdown_state, lv)
             right_ll = self.binary_ll(right_logits, has_right, reduction='none') * float_has_left
             ll = ll + torch.sum(right_ll)
+
+            right_update = self.topdown_right_embed[has_right]
+            topdown_state = self.cell_topright(right_update, topdown_state, lv)
+
+            # Right leaf label prediction.
+            right_leaf_ll = self._predict_leaves(1, lv, topdown_state[0])
+            ll = ll + right_leaf_ll
+
             lr_ids = TreeLib.GetLeftRightSelect(lv, np.sum(has_left), np.sum(has_right))
             new_states = []
-            for i in range(2):
+            for i in range(2): # h and c
                 new_s = multi_index_select([lr_ids[0], lr_ids[2]], [lr_ids[1], lr_ids[3]],
                                             cur_states[i], topdown_state[i])
                 new_states.append(new_s)

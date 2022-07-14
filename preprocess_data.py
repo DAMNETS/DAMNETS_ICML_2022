@@ -66,37 +66,7 @@ def parse_arguments():
     return args
 
 
-def format_data_abs(graph_ts, n_workers, start_idx=0):
-    '''
-    Prepare the data. This involves computing the delta matrices for the
-    network time series, inserting them into the TreeLib and then putting them into torch geometric
-    format for computation.
-    Args:
-        graph_ts: The time series to pre-process.
-        start_idx: If some time-series have already been processed, we want to start indexing
-        from the index of the last one in the previous batch (as they are accessed
-        via this index in the TreeLib underlying the bigg model). This is used for training and validation split.
-    Returns: A pytorch dataloader that loads the previous network combined with the index in the TreeLib of the
-    associated delta matrix we want to learn.
-    '''
-    print('Computing Deltas')
-    diffs = process_map(compute_adj_delta, graph_ts, max_workers=n_workers)
-    graph_ts = [ts[:-1] for ts in graph_ts]
-    # Flatten (will go into treelib in this order).
-    diffs = [nx.Graph(diff) for diff_ts in diffs for diff in diff_ts]
-    graph_ts = [g for ts in graph_ts for g in ts]
-    num_nodes = graph_ts[0].number_of_nodes()
-    print('Converting to networkx format')
-    data = process_map(from_networkx, graph_ts, max_workers=n_workers, chunksize=20)
-    # data = [from_networkx(g) for g in tqdm(graph_ts)]  # convert to torch_geometric format w/ edgelists.
-    one_hot = torch.eye(num_nodes)
-    print('Setting attributes.')
-    for i in tqdm(range(len(data))):
-        data[i].x = one_hot
-        data[i].graph_id = i + start_idx
-    return (data, diffs), len(diffs)
-
-def format_data(graph_ts, n_workers, start_idx=0):
+def format_data(graph_ts, n_workers, abs=False):
     '''
     Prepare the data. This involves computing the delta matrices for the
     network time series, inserting them into the TreeLib and then putting them into torch geometric
@@ -112,24 +82,56 @@ def format_data(graph_ts, n_workers, start_idx=0):
     print('Computing Deltas')
     delta_fn = partial(compute_adj_delta, abs=False)
     diffs = process_map(delta_fn, graph_ts, max_workers=n_workers)
+    # Remove the last observation from training data.
     graph_ts = [ts[:-1] for ts in graph_ts]
     # Flatten (will go into treelib in this order).
-    diffs_pos = [[(d == 1).astype(np.int) for d in diff_ts] for diff_ts in diffs]
-    diffs_neg = [[(d == -1).astype(np.int) for d in diff_ts] for diff_ts in diffs]
-    diffs_pos = [nx.Graph(diff) for diff_ts in diffs_pos for diff in diff_ts]
-    diffs_neg = [nx.Graph(diff) for diff_ts in diffs_neg for diff in diff_ts]
+    diffs = [nx.Graph(diff) for diff_ts in diffs for diff in diff_ts]
     graph_ts = [g for ts in graph_ts for g in ts]
     num_nodes = graph_ts[0].number_of_nodes()
-    print('Converting to pyg format')
+    print('Converting to networkx format')
     data = process_map(from_networkx, graph_ts, max_workers=n_workers, chunksize=20)
     # data = [from_networkx(g) for g in tqdm(graph_ts)]  # convert to torch_geometric format w/ edgelists.
     one_hot = torch.eye(num_nodes)
     print('Setting attributes.')
-    for i in tqdm(range(len(data))):
-        data[i].x = one_hot
-        data[i].pos_id = (2 * i) + start_idx
-        data[i].neg_id = (2 * i + 1) + start_idx
-    return (data, diffs_pos, diffs_neg), data[-1].neg_id + 1
+    for d in tqdm(data):
+        d.x = one_hot
+        # data[i].graph_id = i + start_idx
+    return list(zip(data, diffs))
+
+# def format_data(graph_ts, n_workers, start_idx=0):
+#     '''
+#     Prepare the data. This involves computing the delta matrices for the
+#     network time series, inserting them into the TreeLib and then putting them into torch geometric
+#     format for computation.
+#     Args:
+#         graph_ts: The time series to pre-process.
+#         start_idx: If some time-series have already been processed, we want to start indexing
+#         from the index of the last one in the previous batch (as they are accessed
+#         via this index in the TreeLib underlying the bigg model). This is used for training and validation split.
+#     Returns: A pytorch dataloader that loads the previous network combined with the index in the TreeLib of the
+#     associated delta matrix we want to learn.
+#     '''
+#     print('Computing Deltas')
+#     delta_fn = partial(compute_adj_delta, abs=False)
+#     diffs = process_map(delta_fn, graph_ts, max_workers=n_workers)
+#     graph_ts = [ts[:-1] for ts in graph_ts]
+#     # Flatten (will go into treelib in this order).
+#     diffs_pos = [[(d == 1).astype(np.int) for d in diff_ts] for diff_ts in diffs]
+#     diffs_neg = [[(d == -1).astype(np.int) for d in diff_ts] for diff_ts in diffs]
+#     diffs_pos = [nx.Graph(diff) for diff_ts in diffs_pos for diff in diff_ts]
+#     diffs_neg = [nx.Graph(diff) for diff_ts in diffs_neg for diff in diff_ts]
+#     graph_ts = [g for ts in graph_ts for g in ts]
+#     num_nodes = graph_ts[0].number_of_nodes()
+#     print('Converting to pyg format')
+#     data = process_map(from_networkx, graph_ts, max_workers=n_workers, chunksize=20)
+#     # data = [from_networkx(g) for g in tqdm(graph_ts)]  # convert to torch_geometric format w/ edgelists.
+#     one_hot = torch.eye(num_nodes)
+#     print('Setting attributes.')
+#     for i in tqdm(range(len(data))):
+#         data[i].x = one_hot
+#         data[i].pos_id = (2 * i) + start_idx
+#         data[i].neg_id = (2 * i + 1) + start_idx
+#     return (data, diffs_pos, diffs_neg), data[-1].neg_id + 1
 
 def main():
     c_args = parse_arguments()
@@ -152,7 +154,6 @@ def main():
     # Remove validation from training set
     train_graphs = train_graphs[val_len:]
     ## Set number of nodes for bigg model (keep names same for compatability)
-    # self.model_args.bigg.max_num_nodes = nx.number_of_nodes(self.train_graphs[0][0])
     print('Number of Training TS: ', len(train_graphs))
     print('Number of Val TS: ', len(val_graphs))
     print('Number of Test TS: ', len(test_graphs))
@@ -170,14 +171,14 @@ def main():
     del graphs
     gc.collect()
     ## put into required format, save.
-    train_processed, idx = format_data(train_graphs, c_args.num_workers)
+    train_processed = format_data(train_graphs, c_args.num_workers)
     save_graph_list(
         train_processed, os.path.join(save_dir, f'{c_args.dataset_name}_train_graphs.pkl'))
     del train_processed
     del train_graphs
     gc.collect()
 
-    val_processed, _ = format_data(val_graphs, c_args.num_workers, idx)
+    val_processed = format_data(val_graphs, c_args.num_workers)
     save_graph_list(
         val_processed, os.path.join(save_dir, f'{c_args.dataset_name}_val_graphs.pkl'))
 
