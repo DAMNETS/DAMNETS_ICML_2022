@@ -128,73 +128,10 @@ GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges,
             return left.first < right.first;
         });
 }
-
-
+/* TODO: remove entirely. */
 GraphStruct* GraphStruct::permute()
 {
     return this;
-//    if (!cfg::bfs_permute)
-//        return this;
-//    if ((int)idx_map.size() != num_nodes)
-//    {
-//        idx_map.resize(num_nodes);
-//    }
-//    for (int i = 0; i < num_nodes; ++i)
-//        idx_map[i] = i;
-//    std::random_shuffle(idx_map.begin(), idx_map.end());
-//    std::unordered_set<int> h;
-//    std::queue<int> q;
-//
-//    GraphStruct* g = new GraphStruct(graph_id, num_nodes, num_edges);
-//    g->idx_map.resize(num_nodes);
-//
-//    int t = 0;
-//    for (int i = 0; i < num_nodes; ++i)
-//    {
-//        int src = idx_map[i];
-//        if (h.count(src))
-//            continue;
-//        q.push(src);
-//        h.insert(src);
-//
-//        while (!q.empty())
-//        {
-//            int cur_node = q.front();
-//            q.pop();
-//            g->idx_map[t++] = cur_node;
-//
-//            for (auto y : edge_list[cur_node])
-//            {
-//                y = idx_map[y];
-//                if (h.count(y))
-//                    continue;
-//                h.insert(y);
-//                q.push(y);
-//            }
-//        }
-//    }
-//    assert(t == num_nodes);
-//    for (int i = 0; i < num_nodes; ++i)
-//        idx_map[g->idx_map[i]] = i;
-//
-//    for (int i = 0; i < num_nodes; ++i)
-//    {
-//        for (auto y : edge_list[i])
-//        {
-//            y = idx_map[y];
-//            int x = idx_map[i];
-//            if (x < y)
-//            {
-//                int t = x; x = y; y = t;
-//            }
-//            if (!g->edge_list.count(x))
-//                g->edge_list[x] = std::vector<int>();
-//            g->edge_list[x].push_back(y);
-//        }
-//    }
-//    for (auto it = g->edge_list.begin(); it != g->edge_list.end(); ++it)
-//        std::sort(it->second.begin(), it->second.end());
-//    return g;
 }
 
 
@@ -207,6 +144,7 @@ void GraphStruct::realize_nodes(int node_start, int node_end, int col_start,
 
     for (int i = node_start; i < node_end; ++i)
     {
+        // Starts at 0.
         auto* row = active_rows[i - node_start];
         row->insert_edges(edge_list[i]);
     }
@@ -359,20 +297,19 @@ int JobCollect::add_job(AdjNode* node)
             {
                 prev_froms[i][cur_depth].push_back(job_position[ch->job_idx]);
                 prev_tos[i][cur_depth].push_back(job_pos);
-            } else {
+            } else { // Bot froms only considers leaf nodes.
                 int bid;
                 // Below checks if it is a leaf node or if it is just the end of this tree.
                 if (ch->is_leaf || !ch->has_edge) {
                     if (!ch->has_edge)
-                        bid = 0;
+                        bid = 0; // Choose the 'empty' embedding.
                     else {
                         assert(ch->weight != 0);
-                        bid = (ch->weight > 0) ? 1 : 2;
+                        bid = (ch->weight > 0) ? 1 : 2; // Choose between +1 / -1 label embeddings.
                     }
-
                 }
 //                    bid = ch->has_edge ? 1 : 0;
-                else {// not a leaf, has an edge, low_level
+                else {// not a leaf, has an edge, low_level - only triggers when using bits_compress, which we don't.
                     bid = 2 + job_position[ch->job_idx];
                     std::cout << "2+ triggered in add job" << std::endl;
                 }
@@ -390,6 +327,55 @@ void JobCollect::append_bool(std::vector< std::vector<int> >& list,
     while (depth >= (int)list.size())
         list.push_back(std::vector<int>());
     list[depth].push_back(val);
+}
+
+void JobCollect::build_row_indices_()
+{
+    row_prev_from.clear();
+    row_prev_to.clear();
+    row_bot_from.clear();
+    row_bot_to.clear();
+    int offset = 0;
+    for (size_t i = 0; i < active_graphs.size(); ++i)
+    {
+        auto* g = active_graphs[i];
+        int ub = g->active_rows.size() - 1; // Don't need last token for auto-regression.
+        // Push back a start of sequence token.
+        row_bot_from.push_back(0);
+        row_bot_to.push_back(offset);
+        offset += 1;
+        for (int j = 0; j < ub; ++j)
+        {
+            auto* root = g->active_rows[j]->root;
+            if (root->has_edge && !root->is_leaf && !root->is_lowlevel)
+            {
+                row_prev_from.push_back(job_position[root->job_idx]);
+                row_prev_to.push_back(j + offset);
+            }
+            else
+            {
+//                if (root->has_edge && !root->is_leaf) {
+//                    std::cout << "2+ triggered in build_row" << std::endl;
+//                    bid = 2 + job_position[root->job_idx];
+//                }
+                int bid = 0;
+                // Below checks if it is a leaf node or if it is just the end of this tree.
+                if (root->is_leaf || !root->has_edge) {
+                    // Bid 0 is the SOS token, 1 means empty, 2 means a +1, 3 means a -1.
+                    if (!root->has_edge)
+                        bid = 1;
+                    else {
+                        assert(root->weight != 0);
+                        bid = (root->weight > 0) ? 2 : 3;
+                    }
+                }
+                row_bot_from.push_back(bid);
+                row_bot_to.push_back(j + offset);
+            }
+        }
+        offset += ub;
+//        std::cout << offset << std::endl;
+    }
 }
 
 void JobCollect::build_row_indices()
@@ -422,11 +408,11 @@ void JobCollect::build_row_indices()
         layer_sizes.push_back(g->active_rows.size());
         int prev_correct = g->node_start & 1;
         used_cnts[i] += prev_correct;
-        int ub = (g->active_rows.size() + prev_correct) / 2;
+        int ub = (g->active_rows.size() + prev_correct) / 2; // Split the interval in half, for the Fenwick structure.
         for (int j = 0; j < ub; ++j)
             for (int k = 0; k < 2; ++k)
             {
-                int row_pos = j * 2 + k - prev_correct;
+                int row_pos = j * 2 + k - prev_correct; // Overall position.
                 if (row_pos < 0) {  // from prev state
                     row_prev_froms[k][0].push_back(prev_offset);
                     row_prev_tos[k][0].push_back(j + offset);

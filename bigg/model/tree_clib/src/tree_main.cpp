@@ -433,9 +433,40 @@ int PrepareTrain(int num_graphs, void* _list_ids, void* _list_start_node,
         g->realize_nodes(node_start, node_end,
                          list_col_start[i], list_col_end[i]);
     }
-    job_collect.build_row_indices();
-    job_collect.build_row_summary();
+    job_collect.build_row_indices_();
+//    job_collect.build_row_summary();
     return 0;
+}
+
+int SetRowIndices(void* _bot_from, void* _bot_to, void* _prev_from, void* _prev_to)
+{
+    int* bot_from = static_cast<int*>(_bot_from);
+    int* bot_to = static_cast<int*>(_bot_to);
+    size_t n_bot = job_collect.row_bot_from.size();
+    if (n_bot > 0)
+    {
+        std::memcpy(bot_from, job_collect.row_bot_from.data(),
+                    job_collect.row_bot_from.size() * sizeof(int));
+        std::memcpy(bot_to, job_collect.row_bot_to.data(),
+                    job_collect.row_bot_to.size() * sizeof(int));
+    }
+    int* prev_from = static_cast<int*>(_prev_from);
+    int* prev_to = static_cast<int*>(_prev_to);
+    std::memcpy(prev_from, job_collect.row_prev_from.data(),
+                job_collect.row_prev_from.size() * sizeof(int));
+    std::memcpy(prev_to, job_collect.row_prev_to.data(),
+                job_collect.row_prev_to.size() * sizeof(int));
+    return 0;
+}
+
+int NumRowBot()
+{
+    return (int)job_collect.row_bot_from.size();
+}
+
+int NumRowPrev()
+{
+    return (int)job_collect.row_prev_from.size();
 }
 
 int AddGraph(int graph_id, int num_nodes, int num_edges, void* edge_pairs, void* edge_signs, int n_left, int n_right)

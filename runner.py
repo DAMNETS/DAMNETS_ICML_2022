@@ -8,6 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import pickle
 from tqdm import tqdm
 import time
+import numpy as np
 import multiprocessing as mp
 
 from models import *
@@ -155,6 +156,9 @@ class Runner:
         sampled_ts_list = []
         model.eval()
         pbar = tqdm(total=len(test_list) * (len(test_list[0]) - 1))
+        add_ratio = []
+        remv_ratio = []
+        ar_ratio = []
         with torch.no_grad():
             for ts in test_list:
                 samples_ts = [ts[0]]
@@ -163,21 +167,28 @@ class Runner:
                     ## Convert to adjacency for GNN
                     edges = from_networkx(g).edge_index.to(device)
                     node_feat = torch.eye(num_nodes).to(device)
-                    delta_entries = model(num_nodes, node_feat, edges)
+                    delta_entries = model(num_nodes, node_feat, edges, g)
                     # Add the sampled new edges
                     new_edges = [(i, j) for i, j, w in delta_entries if w == 1]
                     print(f'Num additions: {len(new_edges)}')
+                    add_ratio.append(sum([not g.has_edge(*edge) for edge in new_edges]) / len(new_edges))
+                    print(f'Num valid additions: {sum([not g.has_edge(*edge) for edge in new_edges])}')
                     g.add_edges_from(new_edges)
                     # Remove the samples deletions
                     deletions = [(i, j) for i, j, w in delta_entries if w == -1]
                     print(f'Num removals: {len(deletions)}')
+                    remv_ratio.append(sum([g.has_edge(*edge) for edge in deletions]) / len(deletions))
+                    print(f'Num valid removals: {sum([g.has_edge(*edge) for edge in deletions])}')
                     g.remove_edges_from(deletions)
+                    ar_ratio.append(len(new_edges) / len(deletions))
                     # NOTE: add/remove edges_from silently fails if edge already exists or doesn't exist.
                     # This is intended behaviour for us.
                     samples_ts.append(g)
                     pbar.update()
                 sampled_ts_list.append(samples_ts)
-
+        print('Average add ratio: ' , np.mean(add_ratio))
+        print('Average rmv ratio: ', np.mean(remv_ratio))
+        print('Average ar ratio: ', np.mean(ar_ratio))
         print('--Saving Sampled TS--')
         save_name = os.path.join(self.args.save_dir, 'sampled_ts.pkl')
         graph_utils.save_graph_list(sampled_ts_list, save_name)

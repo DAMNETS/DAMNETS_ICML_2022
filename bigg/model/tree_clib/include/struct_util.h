@@ -73,6 +73,7 @@ class JobCollect
     JobCollect();
     void reset();
     void build_row_indices();
+    void build_row_indices_();
     void build_row_summary();
     int add_job(AdjNode* node);
     void append_bool(std::vector< std::vector<int> >& list, int depth, int val);
@@ -81,6 +82,8 @@ class JobCollect
     std::vector<int> has_ch;
     std::vector<int> root_weights;
     std::vector<int> is_root_leaf;
+    std::vector<int> row_bot_from, row_bot_to;
+    std::vector<int> row_prev_from, row_prev_to;
     std::vector< std::vector<int> > has_left, has_right, num_left, num_right;
     std::vector< std::vector<int> > is_internal;
     std::vector< std::vector<int> > leaf_weights;

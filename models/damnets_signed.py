@@ -22,9 +22,9 @@ class DamnetsSigned(torch.nn.Module):
         ll, states = self.decoder.forward_train(graph_ids, gnn_embeds, num_nodes)
         return -1 * (ll) / num_nodes
 
-    def forward(self, num_nodes, node_feat, edges, get_ll=False, delta_edges=None):
+    def forward(self, num_nodes, node_feat, edges, g, get_ll=False, delta_edges=None):
         gnn_embeds = self.gnn(node_feat, edges)
-        ll, sampled_edges, row_states = self.decoder(num_nodes, gnn_embeds, edge_list=delta_edges)
+        ll, sampled_edges, row_states = self.decoder(num_nodes, gnn_embeds, g, edge_list=delta_edges)
         if get_ll:
-            return sampled_edges, (ll.item() / num_nodes)
+            return sampled_edges, -1 * (ll.item() / num_nodes)
         return sampled_edges

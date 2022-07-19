@@ -34,6 +34,13 @@ extern "C" int GetLeafMask(int lr, int depth, void* _leaf_mask);
 
 extern "C" int NumLeaves(int lr, int depth);
 
+extern "C" int NumRowBot();
+
+extern "C" int NumRowPrev();
+
+extern "C" int SetRowIndices(void* _bot_from, void* _bot_to, void* _prev_from, void* _prev_to);
+
+
 extern "C" int TotalTreeNodes();
 
 extern "C" int SetTreeEmbedIds(int depth, int lr, void* _bot_from,

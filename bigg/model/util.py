@@ -81,10 +81,11 @@ class AdjNode(object):
 
 
 class ColAutomata(object):
-    def __init__(self, supervised, indices=None):
+    def __init__(self, supervised, g, indices=None):
         self.pos = 0
         self.indices = indices
         self.supervised = supervised
+        self.prev_g = g
         if indices is None:
             self.indices = []
 
@@ -112,6 +113,10 @@ class ColAutomata(object):
             if i[0] >= range_start and i[0] < range_end:
                 return True
         return False
+
+    def get_sign(self, u, v):
+        sign = -1 if self.prev_g.has_edge(u, v) else 1
+        return sign
 
 
 class AdjRow(object):

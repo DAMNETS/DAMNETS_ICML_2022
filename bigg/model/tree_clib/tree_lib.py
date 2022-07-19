@@ -73,6 +73,7 @@ class _tree_lib(object):
         self.lib.GetNumNextStates.restype = ctypes.c_int
         self.lib.GetLeafLabels.restype = ctypes.c_int
         self.lib.GetLeafMask.restype = ctypes.c_int
+        self.lib.SetRowIndices.restype = ctypes.c_int
 
         # self.lib.GetLeafLabels.restype = ctypes.c_int
         # self.lib.NumLeafNodes.restype = ctypes.c_int
@@ -199,6 +200,21 @@ class _tree_lib(object):
                 all_bin_feats.append(feat)
         return all_bin_feats, (base_feat, base_feat)
 
+    def PrepareRowIndices(self):
+        num_bot = self.lib.NumRowBot()
+        num_prev = self.lib.NumRowPrev()
+
+        bot_froms = np.empty((num_bot,), dtype=np.int32)
+        bot_tos = np.empty((num_bot,), dtype=np.int32)
+        prev_froms = np.empty((num_prev,), dtype=np.int32)
+        prev_tos = np.empty((num_prev,), dtype=np.int32)
+
+        self.lib.SetRowIndices(ctypes.c_void_p(bot_froms.ctypes.data),
+                               ctypes.c_void_p(bot_tos.ctypes.data),
+                               ctypes.c_void_p(prev_froms.ctypes.data),
+                               ctypes.c_void_p(prev_tos.ctypes.data))
+        return (bot_froms, bot_tos, prev_froms, prev_tos)
+
     def PrepareRowEmbed(self):
         tot_levels = self.lib.RowMergeSteps()
         lv = 0
@@ -261,7 +277,7 @@ class _tree_lib(object):
         return init_ids, all_ids, last_ids, next_ids, torch.tensor(np_pos, dtype=torch.float32).to(self.device)
 
     # TODO: rename this to HasLeafMask
-    def GetLeafMask(self, lr, depth):
+    def GetLeafMask(self, lr, depth, tensorize=True):
         if lr == 0:
             n = np.sum(self.list_nnodes)
         else:

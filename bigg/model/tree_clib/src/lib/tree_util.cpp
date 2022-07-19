@@ -120,49 +120,67 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
     {
         node->has_edge = col_sm->num_indices > 0;
         job_collect.has_ch.push_back(node->has_edge);
-        int is_root_leaf = node->is_leaf && node->has_edge;
+        // Handle the edge case where the root is a leaf.
+        int is_root_leaf = node->is_leaf;
         job_collect.is_root_leaf.push_back(is_root_leaf);
+        if (is_root_leaf) {
+            int weight;
+            if (node->has_edge)
+                weight = col_sm->add_edge(node->col_begin);
+            else
+                weight = 0;
+            node->update_bits(weight);
+            node->weight = weight;
+            job_collect.root_weights.push_back(weight);
+        }
     } else {
         node->has_edge = true;
     }
-    if (!node->has_edge)
+    if (!node->has_edge) // Remove empty nodes.
         return;
     job_collect.append_bool(job_collect.is_internal, node->depth,
                             !(node->is_leaf));
     if (node->is_leaf) {
-        int weight = col_sm->add_edge(node->col_begin);
-        assert(weight != 0);
-        node->update_bits(weight);
-        node->weight = weight;
-        if (node->is_root) { // Still want to make sign predictions for roots that happen to be leaves.
-           assert(node->has_edge);
-           job_collect.root_weights.push_back(weight);
+        if (!node->is_root) {
+            int weight = col_sm->add_edge(node->col_begin);
+            assert(weight != 0);
+            node->update_bits(weight);
+            node->weight = weight;
+//        if (node->is_root) { // Still want to make sign predictions for roots that happen to be leaves.
+//           assert(node->has_edge);
+//           job_collect.root_weights.push_back(weight);
+//        }
         }
-//        job_collect.append_bool(job_collect.leaf_weights, node->depth, weight);
     } else {
         node->split();
+        // Is there a child somewhere to the left.
         bool has_left = (col_sm->next_edge() < node->mid);
         if (has_left)
             this->add_edges(node->lch, col_sm);
         job_collect.append_bool(job_collect.has_left, node->depth, has_left);
         job_collect.append_bool(job_collect.num_left, node->depth,
                                 node->lch->n_cols);
-        bool has_left_leaf = node->lch->weight != 0;
+        // lch and rch are always made. So we can run this regardless.
+        // Is the lch a leaf. If it's not but no edges were added to it, add_edges is never called on it
+        // so the tree doesn't descend that far anyway. So these are only leaves reached via ML training.
+        int left_leaf_weight = node->lch->weight; // Can be -1, 0, 1
+        bool has_left_leaf = node->lch->is_leaf;
         job_collect.append_bool(job_collect.has_left_leaf, node->depth, has_left_leaf);
         if (has_left_leaf)
-            job_collect.append_bool(job_collect.left_leaf_weights, node->depth, node->lch->weight);
+            job_collect.append_bool(job_collect.left_leaf_weights, node->depth, left_leaf_weight);
 
         bool has_right = has_left ?
-            col_sm->has_edge(node->mid, node->col_end) : true;
+            col_sm->has_edge(node->mid, node->col_end) : true; // Know it has edge, not in left => in right.
         if (has_right)
             this->add_edges(node->rch, col_sm);
         job_collect.append_bool(job_collect.has_right, node->depth, has_right);
         job_collect.append_bool(job_collect.num_right, node->depth,
                                 node->rch->n_cols);
-        bool has_right_leaf = node->rch->weight != 0;
+        int right_leaf_weight = node->rch->weight;
+        bool has_right_leaf = node->rch->is_leaf;
         job_collect.append_bool(job_collect.has_right_leaf, node->depth, has_right_leaf);
         if (has_right_leaf)
-            job_collect.append_bool(job_collect.right_leaf_weights, node->depth, node->rch->weight);
+            job_collect.append_bool(job_collect.right_leaf_weights, node->depth, right_leaf_weight);
         node->update_bits();
         node->job_idx = job_collect.add_job(node);
 
