@@ -177,10 +177,10 @@ class Runner:
                     # Remove the samples deletions
                     deletions = [(i, j) for i, j, w in delta_entries if w == -1]
                     print(f'Num removals: {len(deletions)}')
-                    remv_ratio.append(sum([g.has_edge(*edge) for edge in deletions]) / len(deletions))
+                    remv_ratio.append(sum([g.has_edge(*edge) for edge in deletions]) / (len(deletions) + 1))
                     print(f'Num valid removals: {sum([g.has_edge(*edge) for edge in deletions])}')
                     g.remove_edges_from(deletions)
-                    ar_ratio.append(len(new_edges) / len(deletions))
+                    ar_ratio.append(len(new_edges) / (len(deletions) + 1))
                     # NOTE: add/remove edges_from silently fails if edge already exists or doesn't exist.
                     # This is intended behaviour for us.
                     samples_ts.append(g)
