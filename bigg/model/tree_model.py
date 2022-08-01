@@ -298,23 +298,23 @@ class RecurTreeGen(nn.Module):
             self.tree_pos_enc = lambda x: 0
 
         self.label_smoothing = 0.0
-        self.use_attn = args.use_attn
-        if args.use_attn:
-            self.attn = nn.MultiheadAttention(args.embed_dim, num_heads=4, batch_first=True)
-            self.prev_pos_enc = PosEncoding(args.embed_dim, args.device, args.pos_base, bias=np.pi / 4)
-        layer = nn.TransformerDecoderLayer(args.embed_dim,
-                                                 nhead=8,
-                                                 dim_feedforward=1024,
-                                                 dropout=0.0,
-                                                 batch_first=True)
-        self.decoder = nn.TransformerDecoder(layer, 6)
+        self.use_st_attn = args.use_st_attn
+        if args.use_st_attn: # Use source-target attention against GNN embeddings
+            layer = nn.TransformerDecoderLayer(args.embed_dim,
+                                                     nhead=args.num_heads,
+                                                     dim_feedforward=args.dim_feedforward,
+                                                     dropout=args.dropout,
+                                                     batch_first=True)
+            self.decoder = nn.TransformerDecoder(layer, args.num_tf_layers)
+        else:  # Just use self-attention on rows of delta matrix.
+            layer = nn.TransformerEncoderLayer(args.embed_dim,
+                                                     nhead=args.num_heads,
+                                                     dim_feedforward=args.dim_feedforward,
+                                                     dropout=args.dropout,
+                                                     batch_first=True)
+            self.decoder = nn.TransformerEncoder(layer, args.num_tf_layers)
         self.row_pos_enc = PosEncoding(args.embed_dim, args.device, args.pos_base, bias=np.pi / 4)
         self.num_edges = 0
-        self.edges_by_level = {}
-        self.top_states = []
-        self.left_states = []
-        self.right_states = []
-        self.ll_by_level = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0}
 
     def cell_topdown(self, x, y, lv):
         cell = self.m_cell_topdown if self.share_param else self.cell_topdown_modules[lv]
@@ -522,8 +522,10 @@ class RecurTreeGen(nn.Module):
             lb = 0 if lb_list is None else lb_list[i]
             ub = cur_row.root.n_cols if ub_list is None else ub_list[i]
             mask = generate_square_subsequent_mask(i + 1).to(gnn_embeds.device)
-            # TODO: try to use unbatched transformer.
-            new_h = self.decoder(h.unsqueeze(0), gnn_embeds, tgt_mask=mask)
+            if self.use_st_attn:
+                new_h = self.decoder(h.unsqueeze(0), gnn_embeds, tgt_mask=mask)
+            else:
+                new_h = self.decoder(h.unsqueeze(0), mask=mask)
             new_h = new_h.squeeze(0)
             new_h = new_h[-1:]  # Get the last value
             controller_state = (new_h, c)
@@ -618,12 +620,16 @@ class RecurTreeGen(nn.Module):
         mask = generate_square_subsequent_mask(num_nodes).to(gnn_embeds.device)
         # Put into batch form for decoder.
         h = h.reshape(-1, num_nodes, self.embed_dim)
-        gnn_embeds = gnn_embeds.reshape(-1, num_nodes, self.embed_dim)
-        # decoder does both source-target and self attention.
-        new_h = self.decoder(h, gnn_embeds, tgt_mask = mask)
+        if self.use_st_attn:
+            gnn_embeds = gnn_embeds.reshape(-1, num_nodes, self.embed_dim)
+            # decoder does both source-target and self attention.
+            new_h = self.decoder(h, gnn_embeds, tgt_mask = mask)
+        else:
+            new_h = self.decoder(h, mask=mask)
         new_h = new_h.reshape(-1, self.embed_dim)
-        s0 = new_s[0].detach().cpu().numpy()
-        h0 = new_h.detach().cpu().numpy()
+
+        # s0 = new_s[0].detach().cpu().numpy()
+        # h0 = new_h.detach().cpu().numpy()
         return (new_h, new_s[1])
 
     def _predict_leaves(self, lr, lv, states, get_idx=False):

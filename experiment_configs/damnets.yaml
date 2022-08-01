@@ -10,13 +10,14 @@ model:
     heads: 1  # If using GAT
     dropout: 0.0
   bigg:
+    dropout: 0.0
     embed_dim: 256
-    bits_compress: 256
+    bits_compress: False
     param_layers: 1
     rnn_layers: 2
     pos_enc: True
     pos_base: 10000
-    tree_pos_enc: False
+    tree_pos_enc: True
     share_param: True
     directed: False
     self_loop: False
@@ -24,30 +25,35 @@ model:
     display: False
     use_attn: False
     greedy_frac: 0
+    use_st_attn: False
+    num_heads: 8
+    dim_feedforward: 1024
+    num_tf_layers: 6
 
 experiment:
   device: 0
   train:
-    batch_size: 32
+    batch_size: 64
     shuffle_data: True
-    epochs: 20000
+    epochs: 20000 # Total Epochs.
     optimizer: Adam
     lr: 0.001
-    lr_decay: 0.3  # For milestone based decay
-    weight_decay: 0.005  # Regularisation-type term in Adam
-    snapshot_epochs: 5  # How often to save the model (not including validation)
-    display_iters: 1  # How often to print output
-    clip_grad: 5
-    use_writer: False  # Flag for tensorboard.
+    weight_decay: 0.0005  # Regularisation-type term in Adam
+    snapshot_epochs: 100  # How often to save the model (not including validation)
+    display_iters: 1  # How many sgd steps to print output
+    clip_grad: 5 # Gradient clipping parameter.
+    use_writer: False # Flag for tensorboard.
     n_workers: 8
+    accum_grad: 1  # How many epochs to accumulate over before a gradient step.
+    label_smoothing: 0.0
 
   validation:
-    es_buffer: 50  # Burn in period for early stopping
+    es_buffer: 200  # Burn in period for early stopping
     val_epochs: 1  # Interval between validation epochs
-    es_patience: 20  # How many times to validate with no improvement before stopping
-    batch_size: 32
-    patience: 15
-    decay_factor: 0.1
-    min_lr: 1e-6
-    cooldown: 10
+    es_patience: 500  # How many times to validate with no improvement before stopping
+    batch_size: 32 # Batch size for validation loader
+    patience: 250 # How long to wait after last improvement before decaying learning rate
+    decay_factor: 0.1 # How much to decay it by
+    min_lr: 1e-6 # Minimum learning rate before the scheduler stops decaying alltogether.
+    cooldown: 100 # Cooldown inbetween decays.
 
