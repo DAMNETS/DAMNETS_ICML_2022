@@ -21,7 +21,6 @@ from utils.gnn_validator import GNNValidator
 import utils.graph_utils as graph_utils
 from bigg.model.tree_clib.tree_lib import setup_treelib, TreeLib
 from bigg.model.tree_model import RecurTreeGen
-from models.damnets_pos_neg import DamnetsPosNeg
 from models.damnets_signed import DamnetsSigned
 from torch_geometric.utils.convert import from_networkx
 from torch_geometric.loader import DataLoader
