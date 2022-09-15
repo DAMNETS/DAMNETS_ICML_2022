@@ -15,6 +15,9 @@ from dataset import *
 from utils import graph_generators
 from utils.train_utils import snapshot_model, load_model
 from utils.age_validator import AGEValidator
+from functools import partial
+from tqdm.contrib.concurrent import process_map
+from utils.graph_generators import compute_adj_delta
 import utils.graph_utils as graph_utils
 import json
 
@@ -29,11 +32,26 @@ class Runner:
             self.validator = None
             self.writer = SummaryWriter(args.save_dir) if self.exp_args.train.use_writer else None
 
+    def process_ablation(self, graphs):
+        delta_fn = partial(compute_adj_delta, abs=True)
+        diffs = process_map(delta_fn, graphs, max_workers=4)
+        # Remove the last observation from training data.
+        graph_ts = [ts[:-1] for ts in graphs]
+        diffs = [nx.Graph(diff) for diff_ts in diffs for diff in diff_ts]
+        graph_ts = [g for ts in graph_ts for g in ts]
+        return list(zip(graph_ts, diffs))
+
     def train(self):
         # Create data loader
         dataset = os.path.join(self.args.data_path, self.args.dataset_name)
-        train_graphs = graph_utils.load_graph_ts(dataset + '_train_graphs_raw.pkl')
-        val_graphs = graph_utils.load_graph_ts(dataset + '_val_graphs_raw.pkl')
+        if self.model_args.ablation:  # Below is messy, but it's just an ablation.
+            train_graphs_ = graph_utils.load_graph_ts(dataset + '_train_graphs_raw.pkl')
+            train_graphs = self.process_ablation(train_graphs_)
+            val_graphs_ = graph_utils.load_graph_ts(dataset + '_val_graphs_raw.pkl')
+            val_graphs = self.process_ablation(val_graphs_)
+        else:
+            train_graphs = graph_utils.load_graph_ts(dataset + '_train_graphs_raw.pkl')
+            val_graphs = graph_utils.load_graph_ts(dataset + '_val_graphs_raw.pkl')
         device = self.exp_args.device
         train_dataset = TFTSampler(train_graphs, self.args, tag='train')
         val_dataset = TFTSampler(val_graphs, self.args, tag='val')
@@ -172,6 +190,7 @@ class Runner:
         num_nodes = nx.number_of_nodes(test_list[0][0])
 
         self.args.model.input_size = num_nodes
+        is_ablation = self.args.model.ablation
         model = AGE(self.args).to(device)
         best_markov_file = os.path.join(self.args.model_save_dir,
                                         'val.pt')
@@ -189,7 +208,12 @@ class Runner:
                             'is_sampling': True}
                     adj_pred = model(data).squeeze(0)
                     adj_pred = (adj_pred + adj_pred.T).cpu().numpy()
-                    samples_ts.append(nx.Graph(adj_pred))
+                    if is_ablation:
+                        prev_adj = nx.to_numpy_array(g)
+                        new_adj = (prev_adj + adj_pred) % 2
+                        samples_ts.append(nx.Graph(new_adj))
+                    else:
+                        samples_ts.append(nx.Graph(adj_pred))
                     pbar.update()
                 sampled_ts_list.append(samples_ts)
 

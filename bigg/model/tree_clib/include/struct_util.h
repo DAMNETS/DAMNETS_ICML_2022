@@ -47,6 +47,7 @@ class GraphStruct
 {
  public:
     GraphStruct(int graph_id, int num_nodes, int num_edges,
+                void* _prev_labels = nullptr,
                 void* _edge_pairs = nullptr,
                 void* _edge_signs = nullptr,
                 int n_left = -1,
@@ -56,6 +57,7 @@ class GraphStruct
                        int col_start, int col_end);
     GraphStruct* permute();
     std::map<int, std::vector<std::pair<int, int> > > edge_list;
+    std::vector<std::vector<int>> prev_adj;
     std::vector<AdjRow*> active_rows;
     std::vector<int> idx_map;
     int num_nodes, num_edges, graph_id;
@@ -80,15 +82,16 @@ class JobCollect
     std::vector<AdjNode*> global_job_nodes;
     std::vector<int> job_position;
     std::vector<int> has_ch;
-    std::vector<int> root_weights;
-    std::vector<int> is_root_leaf;
+    std::vector<int> root_add_weights, root_del_weights;
+    std::vector<int> is_root_add_leaf, is_root_del_leaf;
     std::vector<int> row_bot_from, row_bot_to;
     std::vector<int> row_prev_from, row_prev_to;
     std::vector< std::vector<int> > has_left, has_right, num_left, num_right;
     std::vector< std::vector<int> > is_internal;
-    std::vector< std::vector<int> > leaf_weights;
-    std::vector< std::vector<int> > has_left_leaf, has_right_leaf;
-    std::vector< std::vector<int> > left_leaf_weights, right_leaf_weights;
+    std::vector< std::vector<int> > has_left_add_leaf, has_left_del_leaf;
+    std::vector< std::vector<int> > has_right_add_leaf, has_right_del_leaf;
+    std::vector< std::vector<int> > left_add_weights, right_add_weights;
+    std::vector< std::vector<int> > left_del_weights, right_del_weights;
     std::vector<int> n_cell_job_per_level, n_bin_job_per_level;
     std::vector< std::vector<int> > bot_froms[2], bot_tos[2], prev_froms[2], prev_tos[2]; // NOLINT
     std::vector< std::vector<AdjNode*> > binary_feat_nodes;
@@ -108,14 +111,15 @@ extern JobCollect job_collect;
 class ColAutomata
 {
  public:
-    ColAutomata(std::vector< std::pair<int, int> >& indices);
-
+    ColAutomata(std::vector< std::pair<int, int> >& indices, std::vector<int>& prev_row);
     int add_edge(int col_idx);
     int next_edge();
     int last_edge();
     bool has_edge(int range_start, int range_end);
+    bool had_edge(int ix);
 
     std::pair<int, int> * indices;
+    std::vector<int> prev_row;
     int pos, num_indices;
 };
 

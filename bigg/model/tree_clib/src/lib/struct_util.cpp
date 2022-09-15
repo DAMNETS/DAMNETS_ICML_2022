@@ -81,7 +81,7 @@ int num_ones(int n)
     return cnt;
 }
 
-GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges,
+GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges, void* _prev_labels,
                          void* _edge_pairs, void* _edge_signs, int n_left, int n_right)
 {
     this->num_nodes = num_nodes;
@@ -91,7 +91,27 @@ GraphStruct::GraphStruct(int graph_id, int num_nodes, int num_edges,
     edge_list.clear();
     active_rows.clear();
     idx_map.clear();
+    prev_adj.clear();
 
+    if(_prev_labels == nullptr)
+        return;
+    int* prev_labels = static_cast<int*>(_prev_labels);
+    prev_adj.push_back(std::vector<int>());
+
+    int k = 0;
+    for (int i = 1; i < num_nodes; i++)
+    {
+        std::vector<int> row(prev_labels + k, prev_labels + k + i);
+        prev_adj.push_back(row);
+        k += i;
+    }
+//    std::cout << "Prev Size: " << prev_adj.size() << std::endl;
+//    for (auto v : prev_adj) {
+//        for (auto a : v) {
+//            std::cout << a << " ";
+//        }
+//        std::cout << std::endl;
+//    }
     if (_edge_pairs == nullptr)
         return;
     int* edge_pairs = static_cast<int*>(_edge_pairs);
@@ -146,18 +166,19 @@ void GraphStruct::realize_nodes(int node_start, int node_end, int col_start,
     {
         // Starts at 0.
         auto* row = active_rows[i - node_start];
-        row->insert_edges(edge_list[i]);
+        row->insert_edges(edge_list[i], prev_adj[i]);
     }
     this->node_start = node_start;
     this->node_end = node_end;
 }
 
 
-ColAutomata::ColAutomata(std::vector<std::pair<int, int> >& _indices)
+ColAutomata::ColAutomata(std::vector<std::pair<int, int> >& _indices, std::vector<int>& prev_row)
 {
     this->indices = _indices.data();
     this->pos = 0;
     this->num_indices = (int)_indices.size();
+    this->prev_row = prev_row;
 }
 
 int ColAutomata::add_edge(int col_idx)
@@ -192,6 +213,12 @@ bool ColAutomata::has_edge(int range_start, int range_end)
             break;
     }
     return false;
+}
+
+bool ColAutomata::had_edge(int ix) {
+    assert(ix < this->prev_row.size());
+    bool had_edge = this->prev_row[ix] == 1 ? true: false;
+    return had_edge;
 }
 
 
@@ -239,13 +266,18 @@ void JobCollect::reset()
     num_left.clear();
     num_right.clear();
     is_internal.clear();
-    leaf_weights.clear();
-    has_left_leaf.clear();
-    has_right_leaf.clear();
-    left_leaf_weights.clear();
-    right_leaf_weights.clear();
-    root_weights.clear();
-    is_root_leaf.clear();
+    root_add_weights.clear();
+    root_del_weights.clear();
+    has_left_add_leaf.clear();
+    has_left_del_leaf.clear();
+    has_right_add_leaf.clear();
+    has_right_del_leaf.clear();
+    is_root_add_leaf.clear();
+    is_root_del_leaf.clear();
+    left_del_weights.clear();
+    left_add_weights.clear();
+    right_del_weights.clear();
+    right_add_weights.clear();
     bot_left_froms.clear();
     bot_left_tos.clear();
     next_left_froms.clear();

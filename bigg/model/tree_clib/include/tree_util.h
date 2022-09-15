@@ -55,7 +55,7 @@ class AdjRow
     ~AdjRow();
     void init(int row, int col_start, int col_end);
 
-    void insert_edges(std::vector<std::pair<int, int> >& edge_list);
+    void insert_edges(std::vector<std::pair<int, int> >& edge_list, std::vector<int>& prev_row);
     AdjNode* root;
     int row, max_col;
 

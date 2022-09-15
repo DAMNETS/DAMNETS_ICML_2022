@@ -19,10 +19,10 @@ class TFTSampler(torch.utils.data.Dataset):
         print(f'Processing {tag} data.')
         pbar = tqdm(total = self.N * (self.T - 1))
         ix = 0
-        for b in range(self.N):
-            for t in range(self.T - 1):
-                x = np.tril(nx.to_numpy_array(ts_list[b][t]), k=-1)
-                y = np.tril(nx.to_numpy_array(ts_list[b][t + 1]), k=-1)
+        if self.args.model.ablation:
+            for adj, delta in ts_list:
+                x = np.tril(nx.to_numpy_array(adj), k=-1)
+                y = np.abs(np.tril(nx.to_numpy_array(delta), k=-1))
                 labels = []
                 for i in range(1, y.shape[0]):
                     labels += [y[i, :i]]
@@ -35,6 +35,23 @@ class TFTSampler(torch.utils.data.Dataset):
                 self.data.append(data)
                 ix += 1
                 pbar.update(1)
+        else:
+            for b in range(self.N):
+                for t in range(self.T - 1):
+                    x = np.tril(nx.to_numpy_array(ts_list[b][t]), k=-1)
+                    y = np.tril(nx.to_numpy_array(ts_list[b][t + 1]), k=-1)
+                    labels = []
+                    for i in range(1, y.shape[0]):
+                        labels += [y[i, :i]]
+                    labels = np.concatenate(labels)
+                    # Remove the last row of y adjacency (don't need it for forward pass)
+                    y = y[:-1]
+                    # Set the first row to be all ones (SOS token for forward pass)
+                    y[0] = 1
+                    data = {'x': x, 'y': y, 'y_lab': labels}
+                    self.data.append(data)
+                    ix += 1
+                    pbar.update(1)
         print('Dataset length: ', len(self.data))
 
     def collate_fn(self, batch):

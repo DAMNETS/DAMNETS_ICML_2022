@@ -107,9 +107,9 @@ void AdjRow::init(int row, int col_start, int col_end)
 }
 
 
-void AdjRow::insert_edges(std::vector<std::pair<int, int> >& edge_list)
+void AdjRow::insert_edges(std::vector<std::pair<int, int> >& edge_list, std::vector<int>& prev_row)
 {
-    auto* col_sm = new ColAutomata(edge_list);
+    auto* col_sm = new ColAutomata(edge_list, prev_row);
     this->add_edges(this->root, col_sm);
     delete col_sm;
 }
@@ -122,8 +122,11 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
         job_collect.has_ch.push_back(node->has_edge);
         // Handle the edge case where the root is a leaf.
         int is_root_leaf = node->is_leaf;
-        job_collect.is_root_leaf.push_back(is_root_leaf);
-        if (is_root_leaf) {
+        if (!is_root_leaf || node->row == 0) {
+            job_collect.is_root_del_leaf.push_back(false);
+            job_collect.is_root_add_leaf.push_back(false);
+        }
+        else { // Not the first row, but root is a leaf node.
             int weight;
             if (node->has_edge)
                 weight = col_sm->add_edge(node->col_begin);
@@ -131,7 +134,17 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
                 weight = 0;
             node->update_bits(weight);
             node->weight = weight;
-            job_collect.root_weights.push_back(weight);
+            bool had_edge = col_sm->had_edge(node->col_begin);
+            if (had_edge) {
+                job_collect.root_del_weights.push_back(weight);
+                job_collect.is_root_del_leaf.push_back(true);
+                job_collect.is_root_add_leaf.push_back(false);
+            } else {
+                job_collect.root_add_weights.push_back(weight);
+                job_collect.is_root_del_leaf.push_back(false);
+                job_collect.is_root_add_leaf.push_back(true);
+            }
+
         }
     } else {
         node->has_edge = true;
@@ -165,9 +178,24 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
         // so the tree doesn't descend that far anyway. So these are only leaves reached via ML training.
         int left_leaf_weight = node->lch->weight; // Can be -1, 0, 1
         bool has_left_leaf = node->lch->is_leaf;
-        job_collect.append_bool(job_collect.has_left_leaf, node->depth, has_left_leaf);
-        if (has_left_leaf)
-            job_collect.append_bool(job_collect.left_leaf_weights, node->depth, left_leaf_weight);
+        if(!has_left_leaf) {
+            job_collect.append_bool(job_collect.has_left_add_leaf, node->depth, false);
+            job_collect.append_bool(job_collect.has_left_del_leaf, node->depth, false);
+        }
+        if (has_left_leaf) {
+            if (col_sm->had_edge(node->lch->col_begin)) { // Had an edge, can only be -1 or 0
+                assert(left_leaf_weight <= 0);
+                job_collect.append_bool(job_collect.left_del_weights, node->depth, left_leaf_weight);
+                job_collect.append_bool(job_collect.has_left_add_leaf, node->depth, false);
+                job_collect.append_bool(job_collect.has_left_del_leaf, node->depth, true);
+            }
+            else { // Didn't have an edge, so can only be 1 or 0
+                assert(left_leaf_weight >= 0);
+                job_collect.append_bool(job_collect.left_add_weights, node->depth, left_leaf_weight);
+                job_collect.append_bool(job_collect.has_left_add_leaf, node->depth, true);
+                job_collect.append_bool(job_collect.has_left_del_leaf, node->depth, false);
+            }
+        }
 
         bool has_right = has_left ?
             col_sm->has_edge(node->mid, node->col_end) : true; // Know it has edge, not in left => in right.
@@ -178,9 +206,27 @@ void AdjRow::add_edges(AdjNode* node, ColAutomata* col_sm)
                                 node->rch->n_cols);
         int right_leaf_weight = node->rch->weight;
         bool has_right_leaf = node->rch->is_leaf;
-        job_collect.append_bool(job_collect.has_right_leaf, node->depth, has_right_leaf);
-        if (has_right_leaf)
-            job_collect.append_bool(job_collect.right_leaf_weights, node->depth, right_leaf_weight);
+        // We don't need to do any prediction if it doesn't have left (as it has an edge).
+        if(!has_right_leaf || (has_right_leaf && !has_left)) {
+            job_collect.append_bool(job_collect.has_right_add_leaf, node->depth, false);
+            job_collect.append_bool(job_collect.has_right_del_leaf, node->depth, false);
+        }
+//        job_collect.append_bool(job_collect.has_right_leaf, node->depth, has_right_leaf);
+        else {
+            assert(has_right_leaf && has_left);
+            if (col_sm->had_edge(node->rch->col_begin)) { // Can only be deletion.
+                assert(right_leaf_weight <= 0);
+                job_collect.append_bool(job_collect.right_del_weights, node->depth, right_leaf_weight);
+                job_collect.append_bool(job_collect.has_right_add_leaf, node->depth, false);
+                job_collect.append_bool(job_collect.has_right_del_leaf, node->depth, true);
+            }
+            else { // Can only be addition.
+                assert(right_leaf_weight >= 0);
+                job_collect.append_bool(job_collect.right_add_weights, node->depth, right_leaf_weight);
+                job_collect.append_bool(job_collect.has_right_add_leaf, node->depth, true);
+                job_collect.append_bool(job_collect.has_right_del_leaf, node->depth, false);
+            }
+        }
         node->update_bits();
         node->job_idx = job_collect.add_job(node);
 

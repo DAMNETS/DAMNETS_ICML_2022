@@ -71,7 +71,7 @@ def train_test_dymond(path):
     dymond_generate(dataset_dir, dataset_info['T'] + 1)
 
 
-def run_dymond(graphs_file, output_dir, n_workers=8):
+def run_dymond(graphs_file, output_dir, n_workers=2):
     # if test_dir is None:
     #     with open('experiment_files/last_test.txt', 'r') as f:
     #         test_dir = f.readline()

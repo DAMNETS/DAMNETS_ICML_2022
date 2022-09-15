@@ -26,7 +26,7 @@ def generate_bipartite_contraction_ts(n, m, p, decay_prop, T, **kwargs):
         non_edges = list(non_edges)
         decay_n = int(np.ceil(decay_prop * len(non_edges)))
         if len(non_edges) == 0 or len(decay_edges) == 0:
-            break
+            ts.append(nx.Graph(G))
         else:
             remove_edges = np.random.choice(len(decay_edges), size=decay_n, replace=False)
             add_edges = np.random.choice(len(non_edges), size=decay_n, replace=False)

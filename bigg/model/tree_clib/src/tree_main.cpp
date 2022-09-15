@@ -186,15 +186,23 @@ int NumInternalNodes(int depth)
     return (int)job_collect.has_left[depth].size();
 }
 
-int NumLeaves(int lr, int depth)
+int NumLeaves(int lr, int ar, int depth)
 {
-    if (lr == 0)
-        return (int)job_collect.root_weights.size();
-    if (lr < 0 && depth >= (int)job_collect.left_leaf_weights.size())
+    std::vector<std::vector<int>> weights;
+    if (lr == 0) {
+        int sz = (ar > 0) ? job_collect.root_add_weights.size() : job_collect.root_del_weights.size();
+        return sz;
+    }
+    if (lr < 0)
+    {
+        weights = (ar > 0) ? job_collect.left_add_weights : job_collect.left_del_weights;
+    }
+    else {
+        weights = (ar > 0) ? job_collect.right_add_weights : job_collect.right_del_weights;
+    }
+    if (depth >= (int)weights.size())
         return 0;
-    else if (lr > 1 && depth >= (int)job_collect.right_leaf_weights.size())
-        return 0;
-    return (lr < 0) ? (int)job_collect.left_leaf_weights[depth].size() : (int)job_collect.right_leaf_weights[depth].size();
+    return weights[depth].size();
 }
 
 int NumLeftBot(int depth)
@@ -202,37 +210,89 @@ int NumLeftBot(int depth)
     return (int)job_collect.bot_left_froms[depth].size();
 }
 
-int GetLeafMask(int lr, int depth, void* _leaf_mask)
+int GetLeafMask(int lr, int ar, int depth, void* _leaf_mask)
 {
     int* leaf_mask = static_cast<int*>(_leaf_mask);
     const int* ptr;
+    std::vector<int> weights;
     size_t n;
     if (lr == 0) {
-        ptr = job_collect.is_root_leaf.data();
-        n = job_collect.is_root_leaf.size();
+        if (ar < 0) {
+            weights = job_collect.is_root_del_leaf;
+        } else {
+            assert(ar == 1);
+            weights = job_collect.is_root_add_leaf;
+        }
     }
     else {
-        ptr = lr < 0 ? job_collect.has_left_leaf[depth].data()
-            : job_collect.has_right_leaf[depth].data();
-        n = lr < 0 ? job_collect.has_left_leaf[depth].size(): job_collect.has_right_leaf[depth].size();
+        if (lr < 0){
+            if (ar < 0) {
+                weights = job_collect.has_left_del_leaf[depth];
+            }
+            else {
+                weights = job_collect.has_left_add_leaf[depth];
+            }
+        }
+        else {
+            if (ar < 0) {
+                weights = job_collect.has_right_del_leaf[depth];
+            }
+            else {
+                weights = job_collect.has_right_add_leaf[depth];
+            }
+        }
     }
+//    if (lr == 0) {
+//        ptr = job_collect.is_root_leaf.data();
+//        n = job_collect.is_root_leaf.size();
+//    }
+//    else {
+//        ptr = lr < 0 ? job_collect.has_left_leaf[depth].data()
+//            : job_collect.has_right_leaf[depth].data();
+//        n = lr < 0 ? job_collect.has_left_leaf[depth].size(): job_collect.has_right_leaf[depth].size();
+//    }
+    n = weights.size();
+    ptr = weights.data();
     std::memcpy(leaf_mask, ptr, n * sizeof(int));
     return 0;
 }
 
-int GetLeafLabels(int lr, int depth, void* _labels)
+int GetLeafLabels(int lr, int ar, int depth, void* _labels)
 {
     int* labels = static_cast<int*>(_labels);
     size_t n;
     const int* ptr;
+    std::vector<int> weights;
     if (lr == 0) {
-        n = job_collect.root_weights.size();
-        ptr = job_collect.root_weights.data();
+        if (ar < 0) {
+            weights = job_collect.root_del_weights;
+        } else {
+            assert(ar == 1);
+            weights = job_collect.root_add_weights;
+        }
     }
     else {
-        ptr = lr < 0 ? job_collect.left_leaf_weights[depth].data() : job_collect.right_leaf_weights[depth].data();
-        n = lr < 0 ? job_collect.left_leaf_weights[depth].size() : job_collect.right_leaf_weights[depth].size();
+        if (lr < 0){
+            if (ar < 0) {
+                weights = job_collect.left_del_weights[depth];
+            }
+            else {
+                weights = job_collect.left_add_weights[depth];
+            }
+        }
+        else {
+            if (ar < 0) {
+                weights = job_collect.right_del_weights[depth];
+            }
+            else {
+                weights = job_collect.right_add_weights[depth];
+            }
+        }
+//        ptr = lr < 0 ? job_collect.left_leaf_weights[depth].data() : job_collect.right_leaf_weights[depth].data();
+//        n = lr < 0 ? job_collect.left_leaf_weights[depth].size() : job_collect.right_leaf_weights[depth].size();
     }
+    n = weights.size();
+    ptr = weights.data();
     std::memcpy(labels, ptr, n * sizeof(int));
     return 0;
 }
@@ -469,9 +529,9 @@ int NumRowPrev()
     return (int)job_collect.row_prev_from.size();
 }
 
-int AddGraph(int graph_id, int num_nodes, int num_edges, void* edge_pairs, void* edge_signs, int n_left, int n_right)
+int AddGraph(int graph_id, int num_nodes, int num_edges, void* prev_labels, void* edge_pairs, void* edge_signs, int n_left, int n_right)
 {
-    auto* g = new GraphStruct(graph_id, num_nodes, num_edges,
+    auto* g = new GraphStruct(graph_id, num_nodes, num_edges, prev_labels,
                               edge_pairs, edge_signs, n_left, n_right);
     assert(graph_id == (int)graph_list.size());
     graph_list.push_back(g);

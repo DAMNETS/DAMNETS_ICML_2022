@@ -333,14 +333,14 @@ if __name__ == '__main__':
     mmds = pd.concat([local_mmds, global_mmds], axis=1)
     print('------ Raw MMDS ------')
     print(mmds)
-    print('------ Mean MMDS ------')
-    print(mmds.mean())
+    print('------ Sum MMDs ------')
+    print(mmds.sum())
     ## Produce dataset-specific plots.
     if dataset_name[:12] == '3_comm_decay' or dataset_name == '3_comm_total_decay' or dataset_name == '3_comm_total_decay_small':
         make_three_comm_plots(sampled_ts, test_ts, model_name, save_dir=output_dir)
     elif dataset_name == 'ba':
         make_ba_plots(sampled_ts, test_ts, model_name, save_dir=output_dir)
-    elif dataset_name == 'bipartite_contraction_small':
+    elif dataset_name == 'bipartite_contraction':
         sb = compute_spectral_bipartivity(sampled_ts)
         print(sb)
         stats = pd.concat([stats, sb], axis=1)

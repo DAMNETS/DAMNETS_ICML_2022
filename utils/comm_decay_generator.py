@@ -17,18 +17,18 @@ def generate_3_comm_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0.2, 
                     - set(nx.non_edges(g.subgraph(list(decay_nodes))))
         non_edges = list(non_edges)
         decay_n = int(np.floor(decay_prop * len(decay_edges)))
-        if decay_n == 0:
-            break
-        else:
-            remove_edges = np.random.choice(len(decay_edges), size=decay_n, replace=False)
-            add_edges = np.random.choice(len(non_edges), size=decay_n, replace=False)
-            for ix in remove_edges:
-                edge = decay_edges[ix]
-                g.remove_edge(edge[0], edge[1])
-            for ix in add_edges:
-                edge = non_edges[ix]
-                g.add_edge(edge[0], edge[1])
-            ts.append(nx.Graph(g))
+        # if decay_n == 0:
+        #     break
+        # else:
+        remove_edges = np.random.choice(len(decay_edges), size=decay_n, replace=False)
+        add_edges = np.random.choice(len(non_edges), size=decay_n, replace=False)
+        for ix in remove_edges:
+            edge = decay_edges[ix]
+            g.remove_edge(edge[0], edge[1])
+        for ix in add_edges:
+            edge = non_edges[ix]
+            g.add_edge(edge[0], edge[1])
+        ts.append(nx.Graph(g))
     return ts
 
 def generate_comm_total_decay_ts(c_sizes, T, p_int=0.7, p_ext=0.01, decay_prop=0.2, **kwargs):

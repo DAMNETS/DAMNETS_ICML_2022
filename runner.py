@@ -42,8 +42,9 @@ class Runner:
 
     def _make_loader(self, zipped):
         graphs = []
-        for g, delta in zipped:
-            g_id = TreeLib.InsertGraph(delta)
+        for gl, delta in zipped:
+            labels, g = gl
+            g_id = TreeLib.InsertGraph(labels, delta)
             g.graph_id = g_id
             graphs.append(g)
         return DataLoader(graphs,
@@ -171,7 +172,7 @@ class Runner:
                     # Add the sampled new edges
                     new_edges = [(i, j) for i, j, w in delta_entries if w == 1]
                     print(f'Num additions: {len(new_edges)}')
-                    add_ratio.append(sum([not g.has_edge(*edge) for edge in new_edges]) / len(new_edges))
+                    add_ratio.append(sum([not g.has_edge(*edge) for edge in new_edges]) / (len(new_edges) + 1))
                     print(f'Num valid additions: {sum([not g.has_edge(*edge) for edge in new_edges])}')
                     g.add_edges_from(new_edges)
                     # Remove the samples deletions

@@ -23,7 +23,6 @@ model:
     self_loop: False
     bfs_permute: False
     display: False
-    use_attn: False
     greedy_frac: 0
     use_st_attn: False
     num_heads: 8

@@ -95,7 +95,7 @@ class _tree_lib(object):
     def TotalTreeNodes(self):
         return self.lib.TotalTreeNodes()
 
-    def InsertGraph(self, nx_g, bipart_stats=None):
+    def InsertGraph(self, labels, nx_g, bipart_stats=None):
         gid = self.num_graphs
         self.num_graphs += 1
         if isinstance(nx_g, CtypeGraph):
@@ -107,7 +107,8 @@ class _tree_lib(object):
             n, m = -1, -1
         else:
             n, m = bipart_stats
-        self.lib.AddGraph(gid, ctype_g.num_nodes, ctype_g.num_edges,
+        labels = labels.astype(np.int32)
+        self.lib.AddGraph(gid, ctype_g.num_nodes, ctype_g.num_edges, ctypes.c_void_p(labels.ctypes.data),
                           ctypes.c_void_p(ctype_g.edge_pairs.ctypes.data), ctypes.c_void_p(ctype_g.edge_signs.ctypes.data), n, m)
         return gid
 
@@ -277,7 +278,7 @@ class _tree_lib(object):
         return init_ids, all_ids, last_ids, next_ids, torch.tensor(np_pos, dtype=torch.float32).to(self.device)
 
     # TODO: rename this to HasLeafMask
-    def GetLeafMask(self, lr, depth, tensorize=True):
+    def GetLeafMask(self, lr, ar, depth, tensorize=True):
         if lr == 0:
             n = np.sum(self.list_nnodes)
         else:
@@ -286,15 +287,15 @@ class _tree_lib(object):
         if n == 0:
             return None
         has_leaf = np.empty((n,), dtype=np.int32)
-        self.lib.GetLeafMask(lr, depth, ctypes.c_void_p(has_leaf.ctypes.data))
+        self.lib.GetLeafMask(lr, ar, depth, ctypes.c_void_p(has_leaf.ctypes.data))
         return has_leaf.astype(np.bool)
 
-    def GetLeafLabels(self, lr, depth, dtype=None):
-        n = self.lib.NumLeaves(lr, depth)
+    def GetLeafLabels(self, lr, ar, depth, dtype=None):
+        n = self.lib.NumLeaves(lr, ar, depth)
         if n == 0:
             return None
         labels = np.empty((n,), dtype=np.int32)
-        self.lib.GetLeafLabels(lr, depth, ctypes.c_void_p(labels.ctypes.data))
+        self.lib.GetLeafLabels(lr, ar, depth, ctypes.c_void_p(labels.ctypes.data))
         if dtype is not None:
             labels = labels.astype(dtype)
         return labels

@@ -88,6 +88,8 @@ def format_data(graph_ts, n_workers, abs=False):
     diffs = [nx.Graph(diff) for diff_ts in diffs for diff in diff_ts]
     graph_ts = [g for ts in graph_ts for g in ts]
     num_nodes = graph_ts[0].number_of_nodes()
+    ix = np.array([(i,j) for i in range(1, num_nodes) for j in range(i)])
+    prev_labels = [nx.to_numpy_array(g)[ix[:, 0], ix[:, 1]] for g in graph_ts]
     print('Converting to networkx format')
     data = process_map(from_networkx, graph_ts, max_workers=n_workers, chunksize=20)
     # data = [from_networkx(g) for g in tqdm(graph_ts)]  # convert to torch_geometric format w/ edgelists.
@@ -96,6 +98,7 @@ def format_data(graph_ts, n_workers, abs=False):
     for d in tqdm(data):
         d.x = one_hot
         # data[i].graph_id = i + start_idx
+    data = list(zip(prev_labels, data))
     return list(zip(data, diffs))
 
 # def format_data(graph_ts, n_workers, start_idx=0):

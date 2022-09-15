@@ -153,8 +153,11 @@ def run_tag_gen(graphs_file, output_dir):
     for entry in os.scandir(el_fstr):
         print(entry.name)
         data_directory_2 = os.path.join(entry.path, f'{entry.name}_output_sequences.txt')
-        ts_array = load_tag_gen_results(entry.path, data_directory_2)
-        ts_list.append([nx.Graph(ts_array[t]) for t in range(T)])
+        try:
+            ts_array = load_tag_gen_results(entry.path, data_directory_2)
+            ts_list.append([nx.Graph(ts_array[t]) for t in range(T)])
+        except FileNotFoundError:
+            continue
     graph_utils.save_graph_list(ts_list, os.path.join(output_dir, 'tag_gen_samples.pkl'))
 
 
